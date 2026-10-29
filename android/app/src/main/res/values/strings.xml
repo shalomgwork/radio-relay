@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Radio Relay</string>
+    <string name="ptt_key_desc">Lets Radio Relay use the Volume Down button as push-to-talk from any screen.</string>
+</resources>

@@ -1,0 +1,39 @@
+name: Build APK
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v3
+        with: { gradle-version: "8.7" }
+
+      # Optional stable signing so updates install over each other.
+      # Secrets: KEYSTORE_B64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD  (see README)
+      - name: Restore keystore
+        if: ${{ secrets.KEYSTORE_B64 != '' }}
+        run: echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build
+        working-directory: android
+        env:
+          KEYSTORE_PATH: ${{ secrets.KEYSTORE_B64 != '' && format('{0}/release.jks', runner.temp) || '' }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          [ -z "$KEYSTORE_PATH" ] && unset KEYSTORE_PATH
+          gradle assembleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-relay-apk
+          path: android/app/build/outputs/apk/release/*.apk

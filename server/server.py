@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""
+radio-relay server: UDP <-> Kenwood NX-3300 via Digirig Lite. macOS or Linux.
+
+Protocol (UDP, one client, carried over Tailscale so no crypto here):
+  byte0  0x00 keepalive   (client -> server every 2 s; server echoes)
+         0x01 opus frame  (either direction, 20 ms @ 48 kHz mono, payload follows)
+         0x02 PTT on      (client -> server)
+         0x03 PTT off     (client -> server)
+"""
+import logging
+import os
+import queue
+import socket
+import sys
+import threading
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import opus_compat  # noqa: F401,E402
+import opuslib  # noqa: E402
+import sounddevice as sd  # noqa: E402
+from radio_hw import FRAME, RATE, PTT, find_audio_device, rms  # noqa: E402
+
+log = logging.getLogger("server")
+
+PORT = int(os.environ.get("PORT", "5000"))
+PTT_PREROLL = float(os.environ.get("PTT_PREROLL_MS", "200")) / 1000
+PTT_HANG = float(os.environ.get("PTT_HANG_MS", "300")) / 1000
+PTT_MAX = float(os.environ.get("PTT_MAX_S", "120"))
+RX_GATE = int(os.environ.get("RX_GATE_RMS", "300"))        # 0 = always stream
+RX_HANG = float(os.environ.get("RX_HANG_MS", "500")) / 1000
+CLIENT_TIMEOUT = 6.0
+SILENCE = b"\x00" * FRAME * 2
+
+
+class Server:
+    def __init__(self):
+        self.ptt = PTT()
+        self.in_dev, self.out_dev = find_audio_device("input"), find_audio_device("output")
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("0.0.0.0", PORT))
+        self.client = None
+        self.client_seen = 0.0
+        self.tx_q: queue.Queue[bytes] = queue.Queue()
+        self.ptt_req = False
+        self.enc = opuslib.Encoder(RATE, 1, opuslib.APPLICATION_VOIP)
+        self.dec = opuslib.Decoder(RATE, 1)
+
+    # ---- network ----
+    def net_loop(self):
+        while True:
+            data, addr = self.sock.recvfrom(2048)
+            if not data:
+                continue
+            if addr != self.client:
+                log.info("client %s", addr)
+                self.client = addr
+            self.client_seen = time.monotonic()
+            t = data[0]
+            if t == 0x00:
+                self.sock.sendto(b"\x00", addr)
+            elif t == 0x01:
+                try:
+                    self.tx_q.put(self.dec.decode(bytes(data[1:]), FRAME))
+                except opuslib.OpusError as e:
+                    log.warning("decode: %s", e)
+            elif t == 0x02:
+                self.ptt_req = True
+                self.tx_q.put(b"")                     # wake tx loop immediately
+            elif t == 0x03:
+                self.ptt_req = False
+
+    # ---- client -> radio ----
+    def tx_loop(self):
+        out = sd.RawOutputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME,
+                                 device=self.out_dev, latency="low")
+        out.start()
+        while True:
+            pcm = self.tx_q.get()
+            self.ptt.set(True)
+            key_time = last = time.monotonic()
+            pre = [pcm] if pcm else []
+            while time.monotonic() - key_time < PTT_PREROLL:    # let the radio key up before audio
+                try:
+                    p = self.tx_q.get(timeout=0.01)
+                    if p: pre.append(p)
+                except queue.Empty:
+                    pass
+            for p in pre:
+                out.write(p)
+            while True:
+                try:
+                    p = self.tx_q.get(timeout=0.02)
+                    if p:
+                        out.write(p); last = time.monotonic()
+                except queue.Empty:
+                    out.write(SILENCE)
+                now = time.monotonic()
+                if not self.ptt_req and now - last > PTT_HANG:
+                    break
+                if now - key_time > PTT_MAX or now - self.client_seen > CLIENT_TIMEOUT:
+                    log.warning("PTT safety unkey")
+                    self.ptt_req = False
+                    with self.tx_q.mutex: self.tx_q.queue.clear()
+                    break
+            self.ptt.set(False)
+
+    # ---- radio -> client ----
+    def rx_loop(self):
+        inp = sd.RawInputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME,
+                                device=self.in_dev, latency="low")
+        inp.start()
+        open_until, was_open = 0.0, False
+        while True:
+            buf, _ = inp.read(FRAME)
+            data = bytes(buf)
+            if self.ptt.keyed or not self.client or time.monotonic() - self.client_seen > CLIENT_TIMEOUT:
+                continue
+            now = time.monotonic()
+            level = rms(data)
+            if RX_GATE == 0 or level > RX_GATE:
+                open_until = now + RX_HANG
+            is_open = now < open_until
+            if is_open != was_open:
+                log.info("RX %s (rms %.0f)", "open" if is_open else "closed", level)
+                was_open = is_open
+            if is_open:
+                self.sock.sendto(b"\x01" + self.enc.encode(data, FRAME), self.client)
+
+    def run(self):
+        log.info("udp/%d  in=%s  out=%s  preroll=%dms hang=%dms gate=%d", PORT,
+                 sd.query_devices(self.in_dev)["name"], sd.query_devices(self.out_dev)["name"],
+                 PTT_PREROLL * 1000, PTT_HANG * 1000, RX_GATE)
+        threading.Thread(target=self.net_loop, daemon=True).start()
+        threading.Thread(target=self.tx_loop, daemon=True).start()
+        self.rx_loop()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s.%(msecs)03d %(message)s", datefmt="%H:%M:%S")
+    s = Server()
+    try:
+        s.run()
+    finally:
+        s.ptt.set(False)

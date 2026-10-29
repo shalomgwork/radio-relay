@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="16dp" android:background="#111111">
+
+    <EditText android:id="@+id/host" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="server (tailscale ip)" android:inputType="textUri" android:textColor="#EEEEEE" android:textColorHint="#777777"/>
+
+    <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Disconnected" android:textColor="#BBBBBB" android:gravity="center" android:paddingVertical="8dp"/>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <Button android:id="@+id/connect" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Connect"/>
+        <Button android:id="@+id/mute" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Mute"/>
+        <Button android:id="@+id/keysetup" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Vol key PTT"/>
+    </LinearLayout>
+
+    <Button android:id="@+id/ptt" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:layout_marginTop="16dp" android:text="PUSH TO TALK" android:textSize="28sp" android:textStyle="bold"
+        android:backgroundTint="#2E7D32" android:textColor="#FFFFFF"/>
+</LinearLayout>

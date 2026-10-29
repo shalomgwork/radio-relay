@@ -1,4 +1,11 @@
 venv/
+relay.env
 rx.wav
+server.log
 __pycache__/
 .DS_Store
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.jks

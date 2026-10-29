@@ -56,6 +56,12 @@ class MainActivity : AppCompatActivity() {
 
         link.setOnCheckedChangeListener { _, on -> onToggle(on) }
         mute.setOnClickListener { RadioService.send(this, RadioService.ACTION_TOGGLE_MUTE) }
+        findViewById<TextView>(R.id.history).setOnClickListener {
+            val h = host.text.toString().trim()
+            if (h.isEmpty()) { status.text = "Enter a server"; return@setOnClickListener }
+            prefs.edit().putString("host", h).apply()
+            startActivity(Intent(this, HistoryActivity::class.java))
+        }
         findViewById<TextView>(R.id.overlay).setOnClickListener {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }

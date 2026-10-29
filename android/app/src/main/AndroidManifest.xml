@@ -11,6 +11,7 @@
 
     <application
         android:label="Radio Relay"
+        android:usesCleartextTraffic="true"
         android:icon="@android:drawable/ic_btn_speak_now"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
 
@@ -20,6 +21,8 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <activity android:name=".HistoryActivity" android:exported="false"/>
 
         <service android:name=".RadioService" android:foregroundServiceType="microphone" android:exported="false"/>
     </application>

@@ -9,11 +9,7 @@ APP=~/Applications/RadioRelay.app
 
 # --- app bundle wrapper ---
 mkdir -p "$APP/Contents/MacOS"
-cat > "$APP/Contents/MacOS/RadioRelay" <<EOR
-#!/bin/bash
-exec "$REPO/run.sh"
-EOR
-chmod +x "$APP/Contents/MacOS/RadioRelay"
+cc -O2 -o "$APP/Contents/MacOS/RadioRelay" macapp/launcher.c
 cat > "$APP/Contents/Info.plist" <<'EOR'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -28,6 +24,7 @@ cat > "$APP/Contents/Info.plist" <<'EOR'
 </dict></plist>
 EOR
 codesign -s - --force --deep "$APP" >/dev/null 2>&1 || true
+tccutil reset Microphone dev.radiorelay.server >/dev/null 2>&1 || true   # forget any stale decision so the prompt shows
 
 # --- launchd ---
 mkdir -p ~/Library/LaunchAgents

@@ -34,10 +34,27 @@ CLIENT_TIMEOUT = 6.0
 SILENCE = b"\x00" * FRAME * 2
 
 
+def wait_for_hardware():
+    """Block until the Digirig is present (plugged in after the server started, or replugged)."""
+    waited = False
+    while True:
+        try:
+            find_audio_device("input"); find_audio_device("output")
+            if waited: log.info("Digirig detected")
+            return
+        except RuntimeError:
+            if not waited: log.warning("Digirig not found; waiting for it to be plugged in")
+            waited = True
+            sd._terminate(); sd._initialize()          # PortAudio only rescans devices on re-init
+            time.sleep(2)
+
+
 class Server:
     def __init__(self):
+        wait_for_hardware()
         self.ptt = PTT()
         self.in_dev, self.out_dev = find_audio_device("input"), find_audio_device("output")
+        self.in_name = sd.query_devices(self.in_dev)["name"]
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("0.0.0.0", PORT))
         self.client = None
@@ -128,7 +145,18 @@ class Server:
             if is_open:
                 self.sock.sendto(b"\x01" + self.enc.encode(data, FRAME), self.client)
 
+    def watchdog(self):
+        """If the Digirig disappears (USB unplug), exit so launchd restarts us into wait_for_hardware()."""
+        import hid
+        while True:
+            time.sleep(2)
+            present = any(d["vendor_id"] == PTT.CM108_VID for d in hid.enumerate())
+            if not present:
+                log.error("Digirig unplugged; restarting")
+                os._exit(3)
+
     def run(self):
+        threading.Thread(target=self.watchdog, daemon=True).start()
         log.info("udp/%d  in=%s  out=%s  preroll=%dms hang=%dms gate=%d", PORT,
                  sd.query_devices(self.in_dev)["name"], sd.query_devices(self.out_dev)["name"],
                  PTT_PREROLL * 1000, PTT_HANG * 1000, RX_GATE)

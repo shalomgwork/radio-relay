@@ -21,6 +21,7 @@ import opus_compat  # noqa: F401,E402
 import opuslib  # noqa: E402
 import sounddevice as sd  # noqa: E402
 from radio_hw import FRAME, RATE, PTT, find_audio_device, rms  # noqa: E402
+import recorder  # noqa: E402
 
 log = logging.getLogger("server")
 
@@ -30,6 +31,7 @@ PTT_HANG = float(os.environ.get("PTT_HANG_MS", "300")) / 1000
 PTT_MAX = float(os.environ.get("PTT_MAX_S", "120"))
 RX_GATE = int(os.environ.get("RX_GATE_RMS", "300"))        # 0 = always stream
 RX_HANG = float(os.environ.get("RX_HANG_MS", "500")) / 1000
+REC_PORT = int(os.environ.get("REC_PORT", str(PORT + 1)))
 CLIENT_TIMEOUT = 6.0
 SILENCE = b"\x00" * FRAME * 2
 
@@ -63,6 +65,7 @@ class Server:
         self.ptt_req = False
         self.enc = opuslib.Encoder(RATE, 1, opuslib.APPLICATION_VOIP)
         self.dec = opuslib.Decoder(RATE, 1)
+        self.rec_rx, self.rec_tx = recorder.Recorder("rx"), recorder.Recorder("tx")
 
     # ---- network ----
     def net_loop(self):
@@ -104,13 +107,14 @@ class Server:
                     if p: pre.append(p)
                 except queue.Empty:
                     pass
+            self.rec_tx.start()
             for p in pre:
-                out.write(p)
+                out.write(p); self.rec_tx.write(p)
             while True:
                 try:
                     p = self.tx_q.get(timeout=0.02)
                     if p:
-                        out.write(p); last = time.monotonic()
+                        out.write(p); self.rec_tx.write(p); last = time.monotonic()
                 except queue.Empty:
                     out.write(SILENCE)
                 now = time.monotonic()
@@ -122,6 +126,7 @@ class Server:
                     with self.tx_q.mutex: self.tx_q.queue.clear()
                     break
             self.ptt.set(False)
+            self.rec_tx.stop()
 
     # ---- radio -> client ----
     def rx_loop(self):
@@ -132,17 +137,23 @@ class Server:
         while True:
             buf, _ = inp.read(FRAME)
             data = bytes(buf)
-            if self.ptt.keyed or not self.client or time.monotonic() - self.client_seen > CLIENT_TIMEOUT:
-                continue
             now = time.monotonic()
-            level = rms(data)
-            if RX_GATE == 0 or level > RX_GATE:
-                open_until = now + RX_HANG
+            if self.ptt.keyed:
+                open_until = 0.0                      # half duplex: never record/stream our own TX
+            else:
+                level = rms(data)
+                if RX_GATE == 0 or level > RX_GATE:
+                    open_until = now + RX_HANG
             is_open = now < open_until
             if is_open != was_open:
-                log.info("RX %s (rms %.0f)", "open" if is_open else "closed", level)
+                log.info("RX %s", "open" if is_open else "closed")
                 was_open = is_open
-            if is_open:
+                if is_open: self.rec_rx.start()
+                else: self.rec_rx.stop()
+            if not is_open:
+                continue
+            self.rec_rx.write(data)
+            if self.client and now - self.client_seen <= CLIENT_TIMEOUT:
                 self.sock.sendto(b"\x01" + self.enc.encode(data, FRAME), self.client)
 
     def watchdog(self):
@@ -160,6 +171,7 @@ class Server:
         log.info("udp/%d  in=%s  out=%s  preroll=%dms hang=%dms gate=%d", PORT,
                  sd.query_devices(self.in_dev)["name"], sd.query_devices(self.out_dev)["name"],
                  PTT_PREROLL * 1000, PTT_HANG * 1000, RX_GATE)
+        recorder.serve(REC_PORT)
         threading.Thread(target=self.net_loop, daemon=True).start()
         threading.Thread(target=self.tx_loop, daemon=True).start()
         self.rx_loop()
@@ -172,3 +184,4 @@ if __name__ == "__main__":
         s.run()
     finally:
         s.ptt.set(False)
+        s.rec_tx.stop(); s.rec_rx.stop()

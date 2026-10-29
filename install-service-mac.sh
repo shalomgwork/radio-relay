@@ -33,8 +33,14 @@ codesign -s - --force --deep "$APP" >/dev/null 2>&1 || true
 mkdir -p ~/Library/LaunchAgents
 sed "s#APP_PLACEHOLDER#$APP#g; s#REPO_PLACEHOLDER#$REPO#g" launchd/$LABEL.plist > "$PLIST"
 launchctl bootout gui/$UID_/$LABEL 2>/dev/null || true
-launchctl bootstrap gui/$UID_ "$PLIST"
-launchctl kickstart -k gui/$UID_/$LABEL
+pkill -f "server/server.py" 2>/dev/null || true
+sleep 2
+launchctl enable gui/$UID_/$LABEL 2>/dev/null || true
+for i in 1 2 3 4 5; do
+  launchctl bootstrap gui/$UID_ "$PLIST" 2>/dev/null && break
+  echo "launchd busy, retrying ($i)..."; sleep 2
+done
+launchctl kickstart -k gui/$UID_/$LABEL 2>/dev/null || true
 sleep 3
 echo "repo: $REPO   app: $APP"
 echo "--- status ---"; launchctl print gui/$UID_/$LABEL | grep -E "state|last exit" | head -3

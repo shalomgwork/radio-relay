@@ -27,7 +27,8 @@ class RadioService : Service() {
         const val ACTION_START = "start"; const val ACTION_STOP = "stop"
         const val ACTION_TOGGLE_MUTE = "toggle_mute"
         const val ACTION_PTT_DOWN = "ptt_down"; const val ACTION_PTT_UP = "ptt_up"
-        const val EXTRA_HOST = "host"
+        const val ACTION_SET_VOLUME = "set_volume"
+        const val EXTRA_HOST = "host"; const val EXTRA_VOLUME = "volume"
         const val RATE = 48000; const val FRAME = 960; const val PORT = 5000
         private const val CH_ID = "radio"; private const val NOTIF_ID = 1
 
@@ -35,6 +36,7 @@ class RadioService : Service() {
         @Volatile var muted = false
         @Volatile var connected = false
         @Volatile var ptt = false
+        @Volatile var volume = 0.8f          // RX volume, independent of system streams
         var onState: (() -> Unit)? = null
 
         fun send(ctx: Context, action: String, host: String? = null) {
@@ -49,6 +51,7 @@ class RadioService : Service() {
     private val alive = AtomicBoolean(false)
     private var lastRx = 0L
     private var wakeLock: PowerManager.WakeLock? = null
+    private var track: AudioTrack? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -59,6 +62,7 @@ class RadioService : Service() {
             ACTION_TOGGLE_MUTE -> { muted = !muted; updateNotification(); onState?.invoke() }
             ACTION_PTT_DOWN -> setPtt(true)
             ACTION_PTT_UP -> setPtt(false)
+            ACTION_SET_VOLUME -> { volume = intent.getFloatExtra(EXTRA_VOLUME, 0.8f); track?.setVolume(volume) }
         }
         return START_STICKY
     }
@@ -130,7 +134,9 @@ class RadioService : Service() {
             .setBufferSizeInBytes(maxOf(minBuf, FRAME * 2 * 4))
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
+        track.setVolume(volume)
         track.play()
+        this.track = track
         val buf = ByteArray(2048)
         val pkt = DatagramPacket(buf, buf.size)
         while (alive.get()) {
@@ -147,6 +153,7 @@ class RadioService : Service() {
                 }
             }
         }
+        this.track = null
         track.stop(); track.release()
     }
 

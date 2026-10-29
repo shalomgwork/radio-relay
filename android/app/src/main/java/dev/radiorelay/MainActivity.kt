@@ -4,7 +4,9 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
@@ -41,6 +43,9 @@ class MainActivity : AppCompatActivity() {
 
         link.setOnCheckedChangeListener { _, on -> onToggle(on) }
         mute.setOnClickListener { RadioService.send(this, RadioService.ACTION_TOGGLE_MUTE) }
+        findViewById<TextView>(R.id.overlay).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        }
 
         volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
@@ -104,6 +109,8 @@ class MainActivity : AppCompatActivity() {
         }
         status.text = text
         dot.background.mutate().setTint(color)
+        findViewById<TextView>(R.id.overlay).text = if (Settings.canDrawOverlays(this))
+            "Floating PTT bubble: on (shown while connected)" else "Enable floating PTT bubble over other apps ›"
     }
 
     override fun onResume() { super.onResume(); render() }

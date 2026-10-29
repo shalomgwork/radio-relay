@@ -7,7 +7,10 @@ import android.content.pm.ServiceInfo
 import android.media.*
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import io.github.jaredmdobson.concentus.OpusApplication
 import io.github.jaredmdobson.concentus.OpusDecoder
@@ -52,6 +55,8 @@ class RadioService : Service() {
     private var lastRx = 0L
     private var wakeLock: PowerManager.WakeLock? = null
     private var track: AudioTrack? = null
+    private var bubble: Bubble? = null
+    private val ui = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,12 +90,16 @@ class RadioService : Service() {
         thread(name = "rx") { rxLoop() }
         thread(name = "tx") { txLoop() }
         thread(name = "keepalive") { keepaliveLoop() }
+        if (Settings.canDrawOverlays(this)) {
+            bubble = Bubble(this) { on -> setPtt(on) }.also { it.show() }
+        }
         onState?.invoke()
     }
 
     private fun stop() {
         alive.set(false); running = false; connected = false; ptt = false
         socket?.close(); socket = null
+        bubble?.hide(); bubble = null
         wakeLock?.let { if (it.isHeld) it.release() }
         onState?.invoke()
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
@@ -100,6 +109,7 @@ class RadioService : Service() {
         if (!running || ptt == on) return
         ptt = on
         sendRaw(if (on) 0x02 else 0x03)
+        ui.post { bubble?.setTx(on) }
         updateNotification(); onState?.invoke()
     }
 

@@ -42,4 +42,8 @@
         </LinearLayout>
         <SeekBar android:id="@+id/volume" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progress="80"/>
     </LinearLayout>
+
+    <TextView android:id="@+id/overlay" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Floating PTT bubble over other apps ›" android:textColor="#4FC3F7" android:textSize="13sp"
+        android:gravity="center" android:paddingVertical="14dp" android:clickable="true" android:focusable="true"/>
 </LinearLayout>

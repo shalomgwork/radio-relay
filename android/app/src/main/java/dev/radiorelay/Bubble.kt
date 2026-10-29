@@ -41,9 +41,9 @@ class Bubble(private val ctx: Context, private val onPtt: (Boolean) -> Unit) {
         root.background = ctx.getDrawable(R.drawable.bubble_pill)
         root.setPadding(dp(6), dp(6), dp(6), dp(6))
 
-        grip.text = "⋮⋮"; grip.setTextColor(0xFFAAAAAA.toInt()); grip.textSize = 20f; grip.gravity = Gravity.CENTER
+        grip.text = "⋮⋮"; grip.setTextColor(0xFFAAAAAA.toInt()); grip.textSize = 26f; grip.gravity = Gravity.CENTER
         grip.setTypeface(null, Typeface.BOLD)
-        root.addView(grip, LinearLayout.LayoutParams(dp(40), dp(64)))
+        root.addView(grip, LinearLayout.LayoutParams(dp(64), dp(64)))
 
         ptt.background = ctx.getDrawable(R.drawable.bubble_bg)
         label.text = "PTT"; label.setTextColor(0xFFFFFFFF.toInt()); label.textSize = 15f; label.setTypeface(null, Typeface.BOLD)

@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ptt: View
     private lateinit var pttLabel: TextView
     private lateinit var volume: SeekBar
+    private lateinit var bubbleSw: Switch
     private val prefs by lazy { getSharedPreferences("cfg", MODE_PRIVATE) }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -34,10 +35,22 @@ class MainActivity : AppCompatActivity() {
         host = findViewById(R.id.host); status = findViewById(R.id.status); dot = findViewById(R.id.dot)
         link = findViewById(R.id.link); mute = findViewById(R.id.mute)
         ptt = findViewById(R.id.ptt); pttLabel = findViewById(R.id.pttLabel); volume = findViewById(R.id.volume)
+        bubbleSw = findViewById(R.id.bubble)
 
         host.setText(prefs.getString("host", ""))
         volume.progress = prefs.getInt("volume", 80)
         RadioService.volume = volume.progress / 100f
+        bubbleSw.isChecked = prefs.getBoolean("bubble", true)
+        RadioService.bubbleEnabled = bubbleSw.isChecked
+        bubbleSw.setOnCheckedChangeListener { _, on ->
+            if (on && !Settings.canDrawOverlays(this)) {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+            prefs.edit().putBoolean("bubble", on).apply()
+            RadioService.bubbleEnabled = on
+            if (RadioService.running) startService(Intent(this, RadioService::class.java)
+                .setAction(RadioService.ACTION_SET_BUBBLE).putExtra(RadioService.EXTRA_ENABLED, on))
+        }
 
         ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
 
@@ -110,7 +123,7 @@ class MainActivity : AppCompatActivity() {
         status.text = text
         dot.background.mutate().setTint(color)
         findViewById<TextView>(R.id.overlay).text = if (Settings.canDrawOverlays(this))
-            "Floating PTT bubble: on (shown while connected)" else "Enable floating PTT bubble over other apps ›"
+            "Bubble over other apps" else "Tap to allow display over other apps ›"
     }
 
     override fun onResume() { super.onResume(); render() }

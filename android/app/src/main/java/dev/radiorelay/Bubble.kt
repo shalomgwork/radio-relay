@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -16,7 +18,8 @@ import kotlin.math.abs
 
 /**
  * Floating hold-to-talk bubble shown over other apps while the link is running.
- * Short press-and-hold = PTT; drag moves it. Needs "Display over other apps" (Settings.ACTION_MANAGE_OVERLAY_PERMISSION).
+ * Hold still for HOLD_MS = PTT (keyed until release); move before that = drag, never transmits.
+ * Needs "Display over other apps" (Settings.ACTION_MANAGE_OVERLAY_PERMISSION).
  */
 class Bubble(private val ctx: Context, private val onPtt: (Boolean) -> Unit) {
     private val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -29,6 +32,8 @@ class Bubble(private val ctx: Context, private val onPtt: (Boolean) -> Unit) {
         PixelFormat.TRANSLUCENT
     ).apply { gravity = Gravity.TOP or Gravity.START; x = dp(16); y = dp(200) }
     private var shown = false
+    private val handler = Handler(Looper.getMainLooper())
+    private val HOLD_MS = 120L
 
     init {
         view.background = ctx.getDrawable(R.drawable.bubble_bg)
@@ -43,21 +48,22 @@ class Bubble(private val ctx: Context, private val onPtt: (Boolean) -> Unit) {
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         var dragging = false; var keyed = false
+        val key = Runnable { if (!dragging) { keyed = true; view.isPressed = true; label.text = "TX"; onPtt(true) } }
         override fun onTouch(v: View, e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    downX = e.rawX; downY = e.rawY; startX = lp.x; startY = lp.y; dragging = false
-                    keyed = true; v.isPressed = true; label.text = "TX"; onPtt(true)   // key immediately: hold = talk
+                    downX = e.rawX; downY = e.rawY; startX = lp.x; startY = lp.y; dragging = false; keyed = false
+                    handler.postDelayed(key, HOLD_MS)          // key only if the finger stays put
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - downX; val dy = e.rawY - downY
-                    if (!dragging && (abs(dx) > slop * 3 || abs(dy) > slop * 3)) {
-                        dragging = true
-                        if (keyed) { keyed = false; v.isPressed = false; label.text = "PTT"; onPtt(false) }  // a drag is not a transmission
+                    if (!dragging && !keyed && (abs(dx) > slop || abs(dy) > slop)) {
+                        dragging = true; handler.removeCallbacks(key)   // moved early: it's a drag, never key
                     }
                     if (dragging) { lp.x = (startX + dx).toInt(); lp.y = (startY + dy).toInt(); wm.updateViewLayout(view, lp) }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(key)
                     if (keyed) { keyed = false; onPtt(false) }
                     v.isPressed = false; label.text = "PTT"
                 }

@@ -4,7 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 UID_=$(id -u); LABEL=dev.radiorelay.server; PLIST=~/Library/LaunchAgents/$LABEL.plist
 mkdir -p ~/Library/LaunchAgents
-sed "s#HOME_PLACEHOLDER#$HOME#g" launchd/$LABEL.plist > "$PLIST"
+REPO=$(pwd); chmod +x run.sh
+sed "s#HOME_PLACEHOLDER/radio-relay#$REPO#g" launchd/$LABEL.plist > "$PLIST"
+echo "repo: $REPO"
 launchctl bootout gui/$UID_/$LABEL 2>/dev/null || true
 launchctl bootstrap gui/$UID_ "$PLIST"
 launchctl kickstart -k gui/$UID_/$LABEL

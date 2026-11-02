@@ -1,6 +1,10 @@
 package dev.radiorelay
 
+import android.app.DownloadManager
 import android.media.AudioAttributes
+import android.net.Uri
+import android.os.Environment
+import android.widget.Toast
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
@@ -21,11 +25,14 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/** Recorded transmissions from the server. Tap one to play; playback continues to the next (newer) one until paused. */
+/** Recorded transmissions from the server, grouped into conversations (gap > GAP_S starts a new one).
+ *  Tap one to play; playback continues to the next (newer) one until paused. ⤓ saves a copy to Downloads. */
 class HistoryActivity : AppCompatActivity() {
     data class Rec(val name: String, val kind: String, val start: Long, val dur: Double)
 
     private var items = listOf<Rec>()          // newest first
+    private var heads = mapOf<Int, String>()   // row index -> conversation header
+    private val GAP_S = 15 * 60
     private var playing = -1
     private var player: MediaPlayer? = null
     private var prepared = false
@@ -71,12 +78,35 @@ class HistoryActivity : AppCompatActivity() {
             } catch (e: Exception) { null }
             runOnUiThread {
                 if (result == null) { empty.text = "Can't reach server at $host"; return@runOnUiThread }
-                items = result
+                items = result; heads = group(result)
                 empty.text = "No recordings yet"
                 empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
                 adapter.notifyDataSetChanged()
             }
         }.start()
+    }
+
+    /** Conversation header for the first (newest) row of each group: "Today · 3:42 PM – 3:58 PM". */
+    private fun group(list: List<Rec>): Map<Int, String> {
+        val h = HashMap<Int, String>()
+        var i = 0
+        while (i < list.size) {
+            var j = i
+            while (j + 1 < list.size && list[j].start - list[j + 1].start <= GAP_S) j++
+            val from = timeFmt.format(Date(list[j].start * 1000)); val to = timeFmt.format(Date(list[i].start * 1000))
+            h[i] = dayOf(list[i].start) + " · " + if (i == j) to else "$from – $to"
+            i = j + 1
+        }
+        return h
+    }
+
+    private fun download(r: Rec) {
+        val req = DownloadManager.Request(Uri.parse("$base/${r.name}"))
+            .setTitle(r.name).setMimeType("audio/wav")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "RadioRelay/${r.name}")
+        getSystemService(DownloadManager::class.java).enqueue(req)
+        Toast.makeText(this, "Saving to Downloads/RadioRelay", Toast.LENGTH_SHORT).show()
     }
 
     private fun play(i: Int) {
@@ -144,8 +174,8 @@ class HistoryActivity : AppCompatActivity() {
             val tx = r.kind == "tx"
             v.findViewById<TextView>(R.id.kind).apply { text = if (tx) "YOU" else "RX"; setTextColor(if (tx) 0xFFE53935.toInt() else 0xFF43A047.toInt()) }
             v.findViewById<TextView>(R.id.time).text = timeFmt.format(Date(r.start * 1000))
-            val prevDay = if (i > 0) dayOf(items[i - 1].start) else ""
-            v.findViewById<TextView>(R.id.day).apply { text = dayOf(r.start); visibility = if (dayOf(r.start) != prevDay) View.VISIBLE else View.GONE }
+            v.findViewById<TextView>(R.id.day).apply { text = heads[i] ?: ""; visibility = if (heads.containsKey(i)) View.VISIBLE else View.GONE }
+            v.findViewById<TextView>(R.id.dl).setOnClickListener { download(r) }
             v.findViewById<TextView>(R.id.dur).text = "${r.dur.toInt()}s"
             val isPlaying = i == playing
             v.findViewById<TextView>(R.id.state).text = if (isPlaying && player?.isPlaying == true) "❚❚" else if (isPlaying) "▶" else ""

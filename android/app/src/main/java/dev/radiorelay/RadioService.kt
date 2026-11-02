@@ -31,6 +31,7 @@ class RadioService : Service() {
         const val ACTION_TOGGLE_MUTE = "toggle_mute"
         const val ACTION_PTT_DOWN = "ptt_down"; const val ACTION_PTT_UP = "ptt_up"
         const val ACTION_SET_VOLUME = "set_volume"; const val ACTION_SET_BUBBLE = "set_bubble"
+        const val ACTION_TOGGLE_BUBBLE = "toggle_bubble"
         const val EXTRA_HOST = "host"; const val EXTRA_VOLUME = "volume"; const val EXTRA_ENABLED = "enabled"
         const val RATE = 48000; const val FRAME = 960; const val PORT = 5000
         private const val CH_ID = "radio"; private const val NOTIF_ID = 1
@@ -41,6 +42,7 @@ class RadioService : Service() {
         @Volatile var ptt = false
         @Volatile var volume = 0.8f          // RX volume, independent of system streams
         @Volatile var bubbleEnabled = true
+        @Volatile var rxActive = false      // a transmission is coming in right now
         var onState: (() -> Unit)? = null
 
         fun send(ctx: Context, action: String, host: String? = null) {
@@ -69,7 +71,8 @@ class RadioService : Service() {
             ACTION_PTT_DOWN -> setPtt(true)
             ACTION_PTT_UP -> setPtt(false)
             ACTION_SET_VOLUME -> { volume = intent.getFloatExtra(EXTRA_VOLUME, 0.8f); track?.setVolume(volume) }
-            ACTION_SET_BUBBLE -> { bubbleEnabled = intent.getBooleanExtra(EXTRA_ENABLED, true); showBubble(running && bubbleEnabled) }
+            ACTION_SET_BUBBLE -> setBubble(intent.getBooleanExtra(EXTRA_ENABLED, true))
+            ACTION_TOGGLE_BUBBLE -> setBubble(!bubbleEnabled)
         }
         return START_STICKY
     }
@@ -96,15 +99,28 @@ class RadioService : Service() {
         onState?.invoke()
     }
 
+    private fun setBubble(on: Boolean) {
+        bubbleEnabled = on
+        showBubble(running && on)
+        updateNotification(); onState?.invoke()
+    }
+
     private fun showBubble(on: Boolean) {
         if (on && Settings.canDrawOverlays(this)) {
-            if (bubble == null) bubble = Bubble(this) { v -> setPtt(v) }
-            bubble?.show()
+            if (bubble == null) bubble = Bubble(this, { v -> setPtt(v) }, { setBubble(false) })
+            bubble?.show(); bubble?.setRx(rxActive)
         } else bubble?.hide()
     }
 
+    private val rxOff = Runnable { rxActive = false; bubble?.setRx(false); onState?.invoke() }
+    private fun markRx() {
+        ui.removeCallbacks(rxOff)
+        if (!rxActive) { rxActive = true; ui.post { bubble?.setRx(true) }; onState?.invoke() }
+        ui.postDelayed(rxOff, 300)
+    }
+
     private fun stop() {
-        alive.set(false); running = false; connected = false; ptt = false
+        alive.set(false); running = false; connected = false; ptt = false; rxActive = false; ui.removeCallbacks(rxOff)
         socket?.close(); socket = null
         showBubble(false); bubble = null
         wakeLock?.let { if (it.isHeld) it.release() }
@@ -162,12 +178,12 @@ class RadioService : Service() {
             lastRx = System.currentTimeMillis()
             if (pkt.length < 1) continue
             when (buf[0].toInt()) {
-                0x01 -> if (!muted && !ptt) {
+                0x01 -> { markRx(); if (!muted && !ptt) {
                     try {
                         val n = dec.decode(buf, 1, pkt.length - 1, pcm, 0, FRAME, false)
                         track.write(pcm, 0, n)
                     } catch (e: Exception) { Log.w("radio", "decode: $e") }
-                }
+                } }
             }
         }
         this.track = null
@@ -219,6 +235,7 @@ class RadioService : Service() {
             .setContentTitle("Radio Relay").setContentText(text)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, if (muted) "Unmute" else "Mute", pi(ACTION_TOGGLE_MUTE)).build())
+            .addAction(Notification.Action.Builder(null, if (bubbleEnabled) "Hide bubble" else "Show bubble", pi(ACTION_TOGGLE_BUBBLE)).build())
             .addAction(Notification.Action.Builder(null, "Disconnect", pi(ACTION_STOP)).build())
             .build()
     }

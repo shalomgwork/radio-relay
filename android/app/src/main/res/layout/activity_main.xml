@@ -7,6 +7,7 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
         <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
             android:text="Radio Relay" android:textColor="#F2F2F2" android:textSize="22sp" android:textStyle="bold"/>
+        <View android:id="@+id/rxDot" android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/rx_dot" android:layout_marginEnd="10dp" android:visibility="invisible"/>
         <View android:id="@+id/dot" android:layout_width="10dp" android:layout_height="10dp" android:background="@drawable/status_dot" android:layout_marginEnd="8dp"/>
         <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Off" android:textColor="#A0A0A5" android:textSize="14sp"/>

@@ -42,15 +42,7 @@ class MainActivity : AppCompatActivity() {
         RadioService.volume = volume.progress / 100f
         bubbleSw.isChecked = prefs.getBoolean("bubble", true)
         RadioService.bubbleEnabled = bubbleSw.isChecked
-        bubbleSw.setOnCheckedChangeListener { _, on ->
-            if (on && !Settings.canDrawOverlays(this)) {
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            }
-            prefs.edit().putBoolean("bubble", on).apply()
-            RadioService.bubbleEnabled = on
-            if (RadioService.running) startService(Intent(this, RadioService::class.java)
-                .setAction(RadioService.ACTION_SET_BUBBLE).putExtra(RadioService.EXTRA_ENABLED, on))
-        }
+        bubbleSw.setOnCheckedChangeListener { _, on -> onBubbleToggle(on) }
 
         ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
 
@@ -89,6 +81,16 @@ class MainActivity : AppCompatActivity() {
         render()
     }
 
+    private fun onBubbleToggle(on: Boolean) {
+        if (on && !Settings.canDrawOverlays(this)) {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        }
+        prefs.edit().putBoolean("bubble", on).apply()
+        RadioService.bubbleEnabled = on
+        if (RadioService.running) startService(Intent(this, RadioService::class.java)
+            .setAction(RadioService.ACTION_SET_BUBBLE).putExtra(RadioService.EXTRA_ENABLED, on))
+    }
+
     /** Toggle ON: lock the server field and start the link. OFF: stop it and unlock. */
     private fun onToggle(on: Boolean) {
         if (on) {
@@ -113,6 +115,12 @@ class MainActivity : AppCompatActivity() {
     private fun render() {
         val r = RadioService.running
         if (link.isChecked != r) setChecked(r)      // e.g. stopped from the notification
+        if (bubbleSw.isChecked != RadioService.bubbleEnabled) {   // hidden from the notification or dropped on ✕
+            bubbleSw.setOnCheckedChangeListener(null); bubbleSw.isChecked = RadioService.bubbleEnabled
+            prefs.edit().putBoolean("bubble", bubbleSw.isChecked).apply()
+            bubbleSw.setOnCheckedChangeListener { _, on -> onBubbleToggle(on) }
+        }
+        findViewById<View>(R.id.rxDot).visibility = if (r && RadioService.rxActive) View.VISIBLE else View.INVISIBLE
         host.isEnabled = !r
         host.alpha = if (r) 0.6f else 1f
         ptt.isEnabled = r

@@ -1,20 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
-    android:descendantFocusability="blocksDescendants">
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
     <TextView android:id="@+id/day" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Today"
-        android:textColor="#7A7A80" android:textSize="11sp" android:letterSpacing="0.1" android:paddingHorizontal="20dp" android:paddingTop="14dp" android:paddingBottom="4dp"/>
+        android:textColor="#7A7A80" android:textSize="10sp" android:letterSpacing="0.1"
+        android:paddingHorizontal="12dp" android:paddingTop="10dp" android:paddingBottom="2dp"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"
-        android:gravity="center_vertical" android:paddingHorizontal="20dp" android:paddingVertical="12dp">
-        <TextView android:id="@+id/kind" android:layout_width="40dp" android:layout_height="wrap_content" android:text="RX"
-            android:textColor="#43A047" android:textSize="12sp" android:textStyle="bold"/>
+        android:gravity="center_vertical" android:paddingHorizontal="12dp" android:paddingVertical="10dp" android:minHeight="44dp">
+        <TextView android:id="@+id/kind" android:layout_width="32dp" android:layout_height="wrap_content" android:text="RX"
+            android:textColor="#43A047" android:textSize="11sp" android:textStyle="bold"/>
         <TextView android:id="@+id/time" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="3:42 PM"
-            android:textColor="#F2F2F2" android:textSize="16sp"/>
+            android:textColor="#F2F2F2" android:textSize="15sp"/>
         <TextView android:id="@+id/dur" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="8s"
-            android:textColor="#A0A0A5" android:textSize="14sp" android:paddingEnd="8dp"/>
-        <TextView android:id="@+id/dl" android:layout_width="44dp" android:layout_height="44dp" android:text="⤓" android:gravity="center"
-            android:textColor="#A0A0A5" android:textSize="22sp" android:clickable="true" android:focusable="true"/>
-        <TextView android:id="@+id/state" android:layout_width="24dp" android:layout_height="wrap_content" android:text=""
-            android:textColor="#4FC3F7" android:textSize="14sp" android:gravity="end"/>
+            android:textColor="#A0A0A5" android:textSize="13sp" android:paddingEnd="8dp"/>
+        <TextView android:id="@+id/state" android:layout_width="20dp" android:layout_height="wrap_content" android:text=""
+            android:textColor="#4FC3F7" android:textSize="13sp" android:gravity="end"/>
     </LinearLayout>
 </LinearLayout>

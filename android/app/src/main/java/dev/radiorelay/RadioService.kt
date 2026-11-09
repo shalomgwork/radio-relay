@@ -41,7 +41,7 @@ class RadioService : Service() {
         @Volatile var connected = false
         @Volatile var ptt = false
         @Volatile var volume = 0.8f          // RX volume, independent of system streams
-        @Volatile var bubbleEnabled = true
+        @Volatile var bubbleEnabled = false  // no touchscreen on target device; bubble unused
         @Volatile var rxActive = false      // a transmission is coming in right now
         var onState: (() -> Unit)? = null
 

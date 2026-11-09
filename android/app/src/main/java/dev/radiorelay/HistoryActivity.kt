@@ -43,7 +43,7 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var playBtn: TextView
     private lateinit var seek: SeekBar
     private val ui = Handler(Looper.getMainLooper())
-    private val host by lazy { getSharedPreferences("cfg", MODE_PRIVATE).getString("host", "") ?: "" }
+    private val host by lazy { Servers.active(this)?.host ?: "" }
     private val base get() = "http://$host:${RadioService.PORT + 1}/recordings"
     private val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
     private val dayFmt = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
@@ -58,6 +58,7 @@ class HistoryActivity : AppCompatActivity() {
         list.adapter = adapter
         list.setOnItemClickListener { _, _, i, _ -> if (i == playing) togglePause() else play(i) }
         playBtn.setOnClickListener { togglePause() }
+        findViewById<View>(R.id.saveBtn).setOnClickListener { items.getOrNull(playing)?.let { download(it) } }
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) { if (fromUser && prepared) player?.seekTo(p) }
             override fun onStartTrackingTouch(sb: SeekBar) {}
@@ -175,7 +176,6 @@ class HistoryActivity : AppCompatActivity() {
             v.findViewById<TextView>(R.id.kind).apply { text = if (tx) "YOU" else "RX"; setTextColor(if (tx) 0xFFE53935.toInt() else 0xFF43A047.toInt()) }
             v.findViewById<TextView>(R.id.time).text = timeFmt.format(Date(r.start * 1000))
             v.findViewById<TextView>(R.id.day).apply { text = heads[i] ?: ""; visibility = if (heads.containsKey(i)) View.VISIBLE else View.GONE }
-            v.findViewById<TextView>(R.id.dl).setOnClickListener { download(r) }
             v.findViewById<TextView>(R.id.dur).text = "${r.dur.toInt()}s"
             val isPlaying = i == playing
             v.findViewById<TextView>(R.id.state).text = if (isPlaying && player?.isPlaying == true) "❚❚" else if (isPlaying) "▶" else ""

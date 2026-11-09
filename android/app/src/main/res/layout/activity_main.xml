@@ -1,61 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="20dp" android:background="#0E0E10">
+    android:orientation="vertical" android:padding="10dp" android:background="#0E0E10">
 
     <!-- header -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:paddingBottom="10dp">
         <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:text="Radio Relay" android:textColor="#F2F2F2" android:textSize="22sp" android:textStyle="bold"/>
-        <View android:id="@+id/rxDot" android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/rx_dot" android:layout_marginEnd="10dp" android:visibility="invisible"/>
-        <View android:id="@+id/dot" android:layout_width="10dp" android:layout_height="10dp" android:background="@drawable/status_dot" android:layout_marginEnd="8dp"/>
+            android:text="Radio Relay" android:textColor="#F2F2F2" android:textSize="16sp" android:textStyle="bold"/>
+        <View android:id="@+id/rxDot" android:layout_width="7dp" android:layout_height="7dp"
+            android:background="@drawable/rx_dot" android:layout_marginEnd="7dp" android:visibility="invisible"/>
+        <View android:id="@+id/dot" android:layout_width="9dp" android:layout_height="9dp"
+            android:background="@drawable/status_dot" android:layout_marginEnd="6dp"/>
         <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Off" android:textColor="#A0A0A5" android:textSize="14sp"/>
+            android:text="Off" android:textColor="#A0A0A5" android:textSize="12sp"/>
     </LinearLayout>
 
-    <!-- server card -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"
-        android:gravity="center_vertical" android:background="@drawable/card_bg" android:padding="14dp" android:layout_marginTop="20dp">
+    <!-- connect / disconnect -->
+    <LinearLayout android:id="@+id/connect" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:background="@drawable/menu_row"
+        android:padding="14dp" android:layout_marginBottom="8dp" android:focusable="true" android:clickable="true"
+        android:nextFocusUp="@id/connect">
+        <View android:id="@+id/connectDot" android:layout_width="12dp" android:layout_height="12dp"
+            android:background="@drawable/status_dot" android:layout_marginEnd="10dp"/>
+        <TextView android:id="@+id/connectLabel" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Connect" android:textColor="#F2F2F2" android:textSize="18sp" android:textStyle="bold"/>
+    </LinearLayout>
+
+    <!-- active server -->
+    <LinearLayout android:id="@+id/servers" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:background="@drawable/menu_row"
+        android:padding="14dp" android:layout_marginBottom="8dp" android:focusable="true" android:clickable="true">
         <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="SERVER" android:textColor="#7A7A80" android:textSize="11sp" android:letterSpacing="0.1"/>
-            <EditText android:id="@+id/host" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:hint="100.x.x.x" android:inputType="textUri" android:imeOptions="actionDone" android:background="@null"
-                android:textColor="#F2F2F2" android:textColorHint="#55555A" android:textSize="18sp" android:paddingVertical="4dp"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="SERVER" android:textColor="#7A7A80" android:textSize="10sp" android:letterSpacing="0.1"/>
+            <TextView android:id="@+id/serverValue" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="None" android:textColor="#F2F2F2" android:textSize="16sp" android:singleLine="true"/>
         </LinearLayout>
-        <Switch android:id="@+id/link" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="›" android:textColor="#7A7A80" android:textSize="22sp"/>
     </LinearLayout>
 
-    <!-- PTT -->
-    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
-        <View android:id="@+id/ptt" android:layout_width="130dp" android:layout_height="130dp" android:layout_gravity="center"
-            android:background="@drawable/ptt_circle" android:contentDescription="Push to talk"/>
-        <TextView android:id="@+id/pttLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center"
-            android:text="PTT" android:textColor="#FFFFFF" android:textSize="22sp" android:textStyle="bold" android:clickable="false"/>
-    </FrameLayout>
-
-    <!-- volume card -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
-        android:background="@drawable/card_bg" android:padding="14dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-            <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="RADIO VOLUME" android:textColor="#7A7A80" android:textSize="11sp" android:letterSpacing="0.1"/>
-            <TextView android:id="@+id/mute" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Mute"
-                android:textColor="#4FC3F7" android:textSize="14sp" android:padding="6dp" android:clickable="true" android:focusable="true"/>
-        </LinearLayout>
-        <SeekBar android:id="@+id/volume" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progress="80"/>
-    </LinearLayout>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"
-        android:gravity="center_vertical" android:background="@drawable/card_bg" android:padding="14dp" android:layout_marginTop="12dp">
-        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="FLOATING PTT" android:textColor="#7A7A80" android:textSize="11sp" android:letterSpacing="0.1"/>
-            <TextView android:id="@+id/overlay" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Bubble over other apps" android:textColor="#F2F2F2" android:textSize="15sp" android:paddingVertical="4dp"
-                android:clickable="true" android:focusable="true"/>
-        </LinearLayout>
-        <Switch android:id="@+id/bubble" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp"/>
-    </LinearLayout>
     <!-- history -->
-    <TextView android:id="@+id/history" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="History  ›" android:textColor="#4FC3F7" android:textSize="15sp" android:gravity="center"
-        android:background="@drawable/card_bg" android:padding="14dp" android:layout_marginTop="12dp" android:clickable="true" android:focusable="true"/>
+    <LinearLayout android:id="@+id/history" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:background="@drawable/menu_row"
+        android:padding="14dp" android:focusable="true" android:clickable="true">
+        <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="History" android:textColor="#F2F2F2" android:textSize="16sp"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="›" android:textColor="#7A7A80" android:textSize="22sp"/>
+    </LinearLayout>
 </LinearLayout>

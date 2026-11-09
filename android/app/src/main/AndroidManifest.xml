@@ -25,6 +25,8 @@
         </activity>
 
         <activity android:name=".HistoryActivity" android:exported="false"/>
+        <activity android:name=".ServersActivity" android:exported="false"/>
+        <activity android:name=".ServerEditActivity" android:exported="false"/>
 
         <service android:name=".RadioService" android:foregroundServiceType="microphone" android:exported="false"/>
 

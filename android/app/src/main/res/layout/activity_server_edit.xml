@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="#0E0E10" android:padding="10dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:paddingBottom="8dp">
+        <TextView android:id="@+id/back" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="‹" android:textColor="#F2F2F2" android:textSize="26sp" android:paddingEnd="12dp"
+            android:focusable="true" android:clickable="true"/>
+        <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="New server" android:textColor="#F2F2F2" android:textSize="18sp" android:textStyle="bold"/>
+    </LinearLayout>
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="NAME" android:textColor="#7A7A80" android:textSize="10sp" android:letterSpacing="0.1" android:paddingTop="6dp"/>
+    <EditText android:id="@+id/name" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="Base" android:inputType="textCapWords" android:background="@drawable/menu_row"
+        android:padding="10dp" android:textColor="#F2F2F2" android:textColorHint="#55555A" android:textSize="16sp"/>
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="SERVER ADDRESS" android:textColor="#7A7A80" android:textSize="10sp" android:letterSpacing="0.1" android:paddingTop="12dp"/>
+    <EditText android:id="@+id/host" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="100.x.x.x" android:inputType="textUri" android:background="@drawable/menu_row"
+        android:padding="10dp" android:textColor="#F2F2F2" android:textColorHint="#55555A" android:textSize="16sp"/>
+
+    <TextView android:id="@+id/save" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Save" android:gravity="center" android:background="@drawable/menu_row"
+        android:padding="14dp" android:layout_marginTop="16dp" android:textColor="#F2F2F2" android:textSize="16sp"
+        android:textStyle="bold" android:focusable="true" android:clickable="true"/>
+    <TextView android:id="@+id/delete" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Delete" android:gravity="center" android:background="@drawable/menu_row"
+        android:padding="14dp" android:layout_marginTop="8dp" android:textColor="#E53935" android:textSize="16sp"
+        android:focusable="true" android:clickable="true" android:visibility="gone"/>
+</LinearLayout>

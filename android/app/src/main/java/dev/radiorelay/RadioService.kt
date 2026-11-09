@@ -58,6 +58,7 @@ class RadioService : Service() {
     private var lastRx = 0L
     private var wakeLock: PowerManager.WakeLock? = null
     private var track: AudioTrack? = null
+    private var toneGen: ToneGenerator? = null
     private var bubble: Bubble? = null
     private val ui = Handler(Looper.getMainLooper())
 
@@ -122,6 +123,7 @@ class RadioService : Service() {
     private fun stop() {
         alive.set(false); running = false; connected = false; ptt = false; rxActive = false; ui.removeCallbacks(rxOff)
         socket?.close(); socket = null
+        toneGen?.release(); toneGen = null
         showBubble(false); bubble = null
         wakeLock?.let { if (it.isHeld) it.release() }
         onState?.invoke()
@@ -132,8 +134,17 @@ class RadioService : Service() {
         if (!running || ptt == on) return
         ptt = on
         sendRaw(if (on) 0x02 else 0x03)
+        if (on) chirp()
         ui.post { bubble?.setTx(on) }
         updateNotification(); onState?.invoke()
+    }
+
+    /** Short beep on the speaker when PTT keys down, like a radio's roger tone — local feedback only. */
+    private fun chirp() {
+        try {
+            val tg = toneGen ?: ToneGenerator(AudioManager.STREAM_MUSIC, 90).also { toneGen = it }
+            tg.startTone(ToneGenerator.TONE_PROP_BEEP, 70)
+        } catch (e: Exception) { Log.w("radio", "chirp: $e") }
     }
 
     private fun sendRaw(type: Int, payload: ByteArray? = null, len: Int = 0) {

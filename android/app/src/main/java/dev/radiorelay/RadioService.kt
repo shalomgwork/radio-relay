@@ -148,12 +148,9 @@ class RadioService : Service() {
         while (alive.get()) {
             sendRaw(0x00)
             val wasConnected = connected
-            val age = System.currentTimeMillis() - lastRx
-            // Hysteresis: show "connected" as soon as a reply lands, but once connected tolerate a
-            // longer gap before falling back. Tailscale over cellular rebuilds its route to the
-            // server now and then (latency spikes to ~700ms, 0% loss), and the old 6s window flapped
-            // the status on every rebuild. Keep it steady through those; real outages still show.
-            connected = if (connected) age < 15000 else age < 6000
+            // Tight window (one missed keepalive shows) so the indicator flickers on any real gap —
+            // useful for judging link stability. Keepalive is every 2s.
+            connected = System.currentTimeMillis() - lastRx < 4000
             if (wasConnected != connected) { updateNotification(); onState?.invoke() }
             Thread.sleep(2000)
         }

@@ -141,4 +141,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onResume() { super.onResume(); render() }
+
+    /** Foreground fallback for the Sonim PTT key when it arrives as a key event instead of a broadcast. */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode in PttKeyReceiver.PTT_KEYCODES) {
+            android.util.Log.i(PttKeyReceiver.TAG, "key action=${event.action} code=${event.keyCode} repeat=${event.repeatCount}")
+            if (event.repeatCount == 0) when (event.action) {
+                android.view.KeyEvent.ACTION_DOWN -> RadioService.send(this, RadioService.ACTION_PTT_DOWN)
+                android.view.KeyEvent.ACTION_UP -> RadioService.send(this, RadioService.ACTION_PTT_UP)
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
 }

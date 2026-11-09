@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Radio Relay</string>
+    <string name="ptt_a11y_desc">Lets the physical PTT key key the radio. Enable this to use the hardware button; the app only watches for the PTT key and never reads screen content.</string>
 </resources>

@@ -368,6 +368,8 @@ PAGE = r"""<!DOCTYPE html>
     </aside>
   </div>
   <audio id="audio"></audio>
+  <canvas id="pcanvas" width="320" height="200" style="display:none"></canvas>
+  <video id="pvideo" playsinline muted style="display:none"></video>
 <script>
 const PCM_RATE = 48000, FRAME = 960, BUF = 4096, GAP = 15 * 60;
 const statusEl = document.getElementById('status'), dot = document.getElementById('dot'), btn = document.getElementById('ptt');
@@ -444,6 +446,38 @@ function setKeyed(on) {
   if (on) { ctx.resume(); chirp(); }
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ ptt: on }));
   setStatus(on ? 'transmitting' : 'listening', on ? '#E53935' : '#43A047');
+  drawOverlay();
+  if (navigator.mediaSession) navigator.mediaSession.playbackState = on ? 'playing' : 'paused';
+}
+
+// ---- always-on-top overlay via VIDEO Picture-in-Picture (the document-PiP variant renders nothing
+// on some Chrome/macOS builds). A canvas shows the PTT state; the PiP window's play/pause button
+// toggles transmit. This is tap-to-talk (overlay windows only expose tap buttons, not press-hold). ----
+let overlayTimer = null;
+function drawOverlay() {
+  const pc = document.getElementById('pcanvas'); if (!pc) return;
+  const g = pc.getContext('2d');
+  g.fillStyle = keyed ? '#E53935' : '#16161A'; g.fillRect(0, 0, 320, 200);
+  g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = 'bold 36px -apple-system, system-ui, sans-serif';
+  g.fillText(keyed ? 'ON AIR' : 'TAP TO TALK', 160, 112);
+  g.font = '15px -apple-system, system-ui, sans-serif'; g.fillStyle = keyed ? '#FFE' : '#9A9AA0';
+  g.fillText(keyed ? 'tap pause to stop' : 'Radio PTT', 160, 150);
+}
+async function startOverlay() {
+  const pv = document.getElementById('pvideo');
+  if (!pv || !pv.requestPictureInPicture || !navigator.mediaSession) return false;
+  try {
+    drawOverlay();
+    if (!pv.srcObject) { pv.srcObject = document.getElementById('pcanvas').captureStream(8); pv.muted = true; await pv.play(); }
+    await pv.requestPictureInPicture();
+    if (!overlayTimer) overlayTimer = setInterval(drawOverlay, 250);   // keep the stream alive
+    navigator.mediaSession.metadata = new MediaMetadata({ title: 'Radio PTT' });
+    navigator.mediaSession.setActionHandler('play', () => { if (ctx) ctx.resume().catch(() => {}); setKeyed(true); });
+    navigator.mediaSession.setActionHandler('pause', () => setKeyed(false));
+    navigator.mediaSession.playbackState = keyed ? 'playing' : 'paused';
+    setStatus('PTT overlay opened', '#43A047');
+    return true;
+  } catch (e) { setStatus('overlay failed: ' + e.message, '#E53935'); return false; }
 }
 
 btn.addEventListener('pointerdown', e => { e.preventDefault(); setKeyed(true); });
@@ -535,9 +569,10 @@ function showPttPanel() {
 
 (function () {
   const pb = document.getElementById('pip');
-  pb.addEventListener('click', () => {
-    if (floatOverApps()) return;           // open a real separate window
-    showPttPanel();                        // popups blocked: use the in-page panel
+  pb.addEventListener('click', async () => {
+    if (await startOverlay()) return;      // always-on-top overlay over other apps (tap to talk)
+    if (floatOverApps()) return;           // else a real separate window
+    showPttPanel();                        // else the in-page panel
     pb.textContent = pttPanel ? 'Close PTT panel' : 'Pop out PTT';
   });
 })();
@@ -611,7 +646,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0
 // Start listening automatically on load. The AudioContext may begin suspended under the browser's
 // autoplay policy; we resume it opportunistically here and on the first interaction, so there's no
 // explicit "tap to start".
-const BUILD = 'b10';
+const BUILD = 'b11';
 document.getElementById('build').textContent = BUILD;
 setStatus('connecting…', '#FFB300');
 start().catch(err => setStatus('audio error: ' + err.message, '#E53935'));

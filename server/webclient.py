@@ -166,6 +166,7 @@ def _serve_http(sock, body, content_type="text/html; charset=utf-8"):
     data = body if isinstance(body, bytes) else body.encode()
     sock.sendall(
         (f"HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\n"
+         f"Cache-Control: no-store\r\n"
          f"Content-Length: {len(data)}\r\nConnection: close\r\n\r\n").encode() + data
     )
 
@@ -291,40 +292,10 @@ PAGE = r"""<!DOCTYPE html>
 <script>
 const PCM_RATE = 48000, FRAME = 960;
 const statusEl = document.getElementById('status'), dot = document.getElementById('dot'), btn = document.getElementById('ptt');
-let ctx, player, ws, keyed = false, ready = false, micOK = false;
-
-const playerCode = `
-class Player extends AudioWorkletProcessor {
-  constructor() { super(); this.q = []; this.cur = null; this.pos = 0;
-    this.port.onmessage = e => { this.q.push(new Int16Array(e.data));
-      while (this.q.length > 60) this.q.shift(); }; }   // cap ~1.2s latency
-  process(_, outputs) {
-    const out = outputs[0][0];
-    for (let i = 0; i < out.length; i++) {
-      if (!this.cur || this.pos >= this.cur.length) { this.cur = this.q.shift() || null; this.pos = 0; }
-      out[i] = this.cur ? this.cur[this.pos++] / 32768 : 0;
-    }
-    return true;
-  }
-}
-registerProcessor('player', Player);`;
-
-const capCode = `
-class Cap extends AudioWorkletProcessor {
-  constructor() { super(); this.acc = new Int16Array(${FRAME}); this.n = 0; }
-  process(inputs) {
-    const inp = inputs[0][0];
-    if (inp) for (let i = 0; i < inp.length; i++) {
-      let s = Math.max(-1, Math.min(1, inp[i]));
-      this.acc[this.n++] = s < 0 ? s * 32768 : s * 32767;
-      if (this.n === ${FRAME}) { this.port.postMessage(this.acc.buffer.slice(0)); this.n = 0; }
-    }
-    return true;
-  }
-}
-registerProcessor('capturer', Cap);`;
-
-function blobURL(code) { return URL.createObjectURL(new Blob([code], { type: 'application/javascript' })); }
+let ctx, ws, keyed = false, ready = false, micOK = false;
+let pcmQ = [], cur = null, pos = 0;              // RX playback queue (Int16 chunks)
+let txAcc = new Int16Array(FRAME), txN = 0;      // TX accumulator -> 960-sample frames
+const BUF = 4096;
 
 function setStatus(text, color) { statusEl.textContent = text; dot.style.background = color; }
 
@@ -336,21 +307,38 @@ function chirp() {
 }
 
 async function start() {
-  ctx = new AudioContext({ sampleRate: PCM_RATE });
-  await ctx.audioWorklet.addModule(blobURL(playerCode));
-  await ctx.audioWorklet.addModule(blobURL(capCode));
-  player = new AudioWorkletNode(ctx, 'player');
-  player.connect(ctx.destination);
+  ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: PCM_RATE });
+
+  // RX playback via ScriptProcessor. Unlike AudioWorklet it needs no secure context, so plain http
+  // over Tailscale can listen. It pulls from pcmQ and outputs silence when there's nothing.
+  const play = ctx.createScriptProcessor(BUF, 0, 1);
+  play.onaudioprocess = e => {
+    const out = e.outputBuffer.getChannelData(0);
+    for (let i = 0; i < out.length; i++) {
+      if (!cur || pos >= cur.length) { cur = pcmQ.shift() || null; pos = 0; }
+      out[i] = cur ? cur[pos++] / 32768 : 0;
+    }
+  };
+  play.connect(ctx.destination);
 
   // Transmit needs the mic, which browsers only grant in a secure context (HTTPS or localhost).
-  // Over plain http to a Tailscale IP listening still works; we just disable the talk button.
   try {
     if (!navigator.mediaDevices) throw new Error('insecure context');
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    const cap = new AudioWorkletNode(ctx, 'capturer');
+    const cap = ctx.createScriptProcessor(BUF, 1, 1);
+    cap.onaudioprocess = e => {
+      if (!keyed || !ws || ws.readyState !== 1) return;
+      const inp = e.inputBuffer.getChannelData(0);
+      for (let i = 0; i < inp.length; i++) {
+        let s = Math.max(-1, Math.min(1, inp[i]));
+        txAcc[txN++] = s < 0 ? s * 32768 : s * 32767;
+        if (txN === FRAME) { ws.send(txAcc.buffer.slice(0)); txN = 0; }
+      }
+    };
+    const mute = ctx.createGain(); mute.gain.value = 0;   // keep the node running without echoing the mic
     ctx.createMediaStreamSource(stream).connect(cap);
-    cap.port.onmessage = e => { if (keyed && ws && ws.readyState === 1) ws.send(e.data); };
+    cap.connect(mute); mute.connect(ctx.destination);
     micOK = true;
   } catch (err) {
     micOK = false;
@@ -368,7 +356,7 @@ function connect() {
   ws.onopen = () => { ready = true; btn.disabled = !micOK; setStatus('listening', '#43A047'); };
   ws.onclose = () => { ready = false; btn.disabled = true; setKeyed(false); setStatus('reconnecting…', '#FFB300'); setTimeout(connect, 1500); };
   ws.onerror = () => ws.close();
-  ws.onmessage = e => { if (typeof e.data !== 'string') player.port.postMessage(e.data); };
+  ws.onmessage = e => { if (typeof e.data !== 'string') { pcmQ.push(new Int16Array(e.data)); if (pcmQ.length > 60) pcmQ.shift(); } };
 }
 
 function setKeyed(on) {

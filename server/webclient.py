@@ -413,7 +413,7 @@ async function start() {
     ctx.createMediaStreamSource(stream).connect(cap);
     cap.connect(mute); mute.connect(ctx.destination);
     micOK = true;
-    if (window.documentPictureInPicture) document.getElementById('pip').hidden = false;
+    document.getElementById('pip').hidden = false;   // PiP where supported, popup window otherwise
   } catch (err) {
     micOK = false;
     btn.firstChild.textContent = 'LISTEN ONLY';
@@ -453,27 +453,37 @@ window.addEventListener('blur', () => setKeyed(false));
 window.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setKeyed(true); } });
 window.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); setKeyed(false); } });
 
-// ---- Picture-in-Picture pop-out PTT ----
+// ---- pop-out PTT: Document Picture-in-Picture (always on top) with a popup-window fallback ----
+function buildPttWindow(w) {
+  const st = w.document.createElement('style');
+  st.textContent = 'html,body{margin:0;height:100%}body{display:flex;align-items:center;justify-content:center;' +
+    'background:#0E0E10;font-family:system-ui}button{width:88%;height:74%;border:none;border-radius:16px;' +
+    'background:#1C1C1E;color:#fff;font-size:24px;font-weight:700;cursor:pointer;touch-action:none}button.tx{background:#E53935}';
+  w.document.head.appendChild(st);
+  const b = w.document.createElement('button');
+  b.textContent = keyed ? 'ON AIR' : 'PTT';
+  b.addEventListener('pointerdown', e => { e.preventDefault(); if (ctx) ctx.resume().catch(() => {}); setKeyed(true); });
+  b.addEventListener('pointerup', () => setKeyed(false));
+  b.addEventListener('pointerleave', () => setKeyed(false));
+  w.document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setKeyed(true); } });
+  w.document.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); setKeyed(false); } });
+  w.document.body.appendChild(b);
+  pipBtn = b;
+  w.addEventListener('pagehide', () => { pipBtn = null; });
+}
+
 document.getElementById('pip').addEventListener('click', async () => {
-  if (!window.documentPictureInPicture) { setStatus('pop-out needs Chrome 116+', '#FFB300'); return; }
-  try {
-    const w = await documentPictureInPicture.requestWindow({ width: 200, height: 150 });
-    const st = w.document.createElement('style');
-    st.textContent = 'body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;' +
-      'background:#0E0E10;font-family:system-ui}button{width:88%;height:74%;border:none;border-radius:16px;' +
-      'background:#1C1C1E;color:#fff;font-size:24px;font-weight:700;cursor:pointer;touch-action:none}button.tx{background:#E53935}';
-    w.document.head.append(st);
-    const b = w.document.createElement('button');
-    b.textContent = keyed ? 'ON AIR' : 'PTT';
-    b.addEventListener('pointerdown', e => { e.preventDefault(); if (ctx) ctx.resume().catch(() => {}); setKeyed(true); });
-    b.addEventListener('pointerup', () => setKeyed(false));
-    b.addEventListener('pointerleave', () => setKeyed(false));
-    w.document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setKeyed(true); } });
-    w.document.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); setKeyed(false); } });
-    w.document.body.append(b);
-    pipBtn = b;
-    w.addEventListener('pagehide', () => { pipBtn = null; });
-  } catch (e) { setStatus('pop-out failed: ' + e.message, '#E53935'); }
+  if (window.documentPictureInPicture) {
+    try {
+      const w = await documentPictureInPicture.requestWindow({ width: 200, height: 150 });
+      buildPttWindow(w);
+      return;
+    } catch (e) { /* fall through to a normal popup window */ }
+  }
+  const w = window.open('', 'ptt', 'width=220,height=170,menubar=no,toolbar=no,location=no,status=no');
+  if (!w) { setStatus('allow popups to pop out PTT', '#FFB300'); return; }
+  try { w.document.title = 'PTT'; buildPttWindow(w); }
+  catch (e) { setStatus('pop-out failed: ' + e.message, '#E53935'); }
 });
 
 // ---- Recordings sidebar (fetch, group, autoplay, download) ----

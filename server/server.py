@@ -22,6 +22,7 @@ import opuslib  # noqa: E402
 import sounddevice as sd  # noqa: E402
 from radio_hw import FRAME, RATE, PTT, find_audio_device, rms  # noqa: E402
 import recorder  # noqa: E402
+import webclient  # noqa: E402
 
 log = logging.getLogger("server")
 
@@ -32,6 +33,7 @@ PTT_MAX = float(os.environ.get("PTT_MAX_S", "120"))
 RX_GATE = int(os.environ.get("RX_GATE_RMS", "300"))        # 0 = always stream
 RX_HANG = float(os.environ.get("RX_HANG_MS", "500")) / 1000
 REC_PORT = int(os.environ.get("REC_PORT", str(PORT + 1)))
+WEB_PORT = int(os.environ.get("WEB_PORT", str(PORT + 2)))
 CLIENT_TIMEOUT = 6.0
 SILENCE = b"\x00" * FRAME * 2
 
@@ -66,6 +68,7 @@ class Server:
         self.enc = opuslib.Encoder(RATE, 1, opuslib.APPLICATION_VOIP)
         self.dec = opuslib.Decoder(RATE, 1)
         self.rec_rx, self.rec_tx = recorder.Recorder("rx"), recorder.Recorder("tx")
+        self.web = None
 
     # ---- network ----
     def net_loop(self):
@@ -155,6 +158,21 @@ class Server:
             self.rec_rx.write(data)
             if self.client and now - self.client_seen <= CLIENT_TIMEOUT:
                 self.sock.sendto(b"\x01" + self.enc.encode(data, FRAME), self.client)
+            if self.web:
+                self.web.broadcast(data)
+
+    # ---- browser client (WebSocket) -> radio ----
+    def _web_tx(self, pcm):
+        self.client_seen = time.monotonic()   # keep tx_loop's safety timer fresh
+        self.tx_q.put(pcm)
+
+    def _web_ptt(self, on):
+        self.client_seen = time.monotonic()
+        if on:
+            self.ptt_req = True
+            self.tx_q.put(b"")
+        else:
+            self.ptt_req = False
 
     def watchdog(self):
         """If the Digirig disappears (USB unplug), exit so launchd restarts us into wait_for_hardware()."""
@@ -172,6 +190,7 @@ class Server:
                  sd.query_devices(self.in_dev)["name"], sd.query_devices(self.out_dev)["name"],
                  PTT_PREROLL * 1000, PTT_HANG * 1000, RX_GATE)
         recorder.serve(REC_PORT)
+        self.web = webclient.serve(WEB_PORT, on_tx=self._web_tx, on_ptt=self._web_ptt)
         threading.Thread(target=self.net_loop, daemon=True).start()
         threading.Thread(target=self.tx_loop, daemon=True).start()
         self.rx_loop()

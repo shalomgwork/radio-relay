@@ -190,7 +190,7 @@ class Server:
                  sd.query_devices(self.in_dev)["name"], sd.query_devices(self.out_dev)["name"],
                  PTT_PREROLL * 1000, PTT_HANG * 1000, RX_GATE)
         recorder.serve(REC_PORT)
-        self.web = webclient.serve(WEB_PORT, on_tx=self._web_tx, on_ptt=self._web_ptt)
+        self.web = webclient.serve(WEB_PORT, on_tx=self._web_tx, on_ptt=self._web_ptt, rec_port=REC_PORT)
         threading.Thread(target=self.net_loop, daemon=True).start()
         threading.Thread(target=self.tx_loop, daemon=True).start()
         self.rx_loop()

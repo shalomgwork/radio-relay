@@ -3,6 +3,7 @@ Browser client bridge: a tiny stdlib HTTP + WebSocket server so a web page can l
 Tailscale, the same way the Android app does over UDP. No external deps.
 
   GET /            -> the single-page client (HTML/JS below)
+  GET /recordings[/<name>]  -> proxied from the local recorder (REC_PORT) so the page is same-origin
   GET /ws          -> WebSocket:
         server -> browser : binary = RX audio, raw int16 LE PCM, 48 kHz mono (960-sample frames)
         browser -> server : binary = TX mic audio, same PCM format (sent only while keyed)
@@ -13,6 +14,7 @@ PCM and hands TX frames to the server's tx queue. Served on WEB_PORT (default PO
 """
 import base64
 import hashlib
+import http.client
 import json
 import logging
 import queue
@@ -126,9 +128,10 @@ class _Client:
 
 
 class WebHub:
-    def __init__(self, on_tx, on_ptt):
+    def __init__(self, on_tx, on_ptt, rec_port):
         self.on_tx = on_tx
         self.on_ptt = on_ptt
+        self.rec_port = rec_port
         self.clients = set()
         self.lock = threading.Lock()
 
@@ -171,7 +174,39 @@ def _serve_http(sock, body, content_type="text/html; charset=utf-8"):
     )
 
 
+def _proxy_recordings(sock, path, req_headers, rec_port):
+    """Relay GET /recordings[...] from the local recorder so the page stays same-origin (avoids CORS
+    and, under Tailscale HTTPS, mixed-content blocking). Forwards Range so audio seeking works."""
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", rec_port, timeout=10)
+        fwd = {}
+        if "range" in req_headers:
+            fwd["Range"] = req_headers["range"]
+        conn.request("GET", path, headers=fwd)
+        resp = conn.getresponse()
+        headers = [("Cache-Control", "no-store"), ("Connection", "close")]
+        for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+            v = resp.getheader(h)
+            if v:
+                headers.append((h, v))
+        head = (f"HTTP/1.1 {resp.status} {resp.reason}\r\n"
+                + "".join(f"{k}: {v}\r\n" for k, v in headers) + "\r\n")
+        sock.sendall(head.encode())
+        while True:
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            sock.sendall(chunk)
+        conn.close()
+    except OSError:
+        try:
+            sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        except OSError:
+            pass
+
+
 def _handle(sock, hub):
+    path = ""
     try:
         sock.settimeout(10)
         raw = b""
@@ -221,6 +256,10 @@ def _handle(sock, hub):
                 log.info("web client gone (%d left)", hub.count)
             return
 
+        if method == "GET" and (path == "/recordings" or path.startswith("/recordings/")):
+            _proxy_recordings(sock, path, headers, hub.rec_port)
+            return
+
         if method == "GET" and path in ("/", "/index.html"):
             _serve_http(sock, PAGE)
             return
@@ -228,16 +267,16 @@ def _handle(sock, hub):
     except (OSError, ValueError, KeyError):
         pass
     finally:
-        try:
-            if path != "/ws":  # ws path keeps the socket; others close here
+        if path != "/ws":  # ws keeps the socket; everything else closes here
+            try:
                 sock.close()
-        except (OSError, NameError):
-            pass
+            except OSError:
+                pass
 
 
-def serve(port, on_tx, on_ptt):
+def serve(port, on_tx, on_ptt, rec_port):
     """Start the web client server (daemon). Returns a WebHub whose broadcast(pcm) feeds RX to browsers."""
-    hub = WebHub(on_tx, on_ptt)
+    hub = WebHub(on_tx, on_ptt, rec_port)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", port))
@@ -262,55 +301,90 @@ PAGE = r"""<!DOCTYPE html>
 <title>Radio Relay</title>
 <style>
   :root { color-scheme: dark; }
-  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
-  body { margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif; background: #0E0E10; color: #F2F2F2;
-         display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-  header { width: 100%; max-width: 520px; display: flex; align-items: center; gap: 10px; padding: 18px 20px; }
-  h1 { font-size: 18px; margin: 0; flex: 1; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif; background: #0E0E10; color: #F2F2F2; }
+  button, a.btn { -webkit-user-select: none; user-select: none; }
+  header { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #1C1C1E; }
+  h1 { font-size: 17px; margin: 0; flex: 1; }
   #dot { width: 10px; height: 10px; border-radius: 50%; background: #777; }
   #status { color: #A0A0A5; font-size: 13px; }
-  main { width: 100%; max-width: 520px; padding: 0 20px 24px; flex: 1; display: flex; flex-direction: column; }
-  #ptt { flex: 1; min-height: 240px; margin: 8px 0 16px; border: none; border-radius: 20px;
-         background: #1C1C1E; color: #fff; font-size: 30px; font-weight: 700; letter-spacing: .5px;
-         cursor: pointer; transition: background .08s, transform .08s; touch-action: none; }
+  #wrap { display: flex; max-width: 920px; margin: 0 auto; }
+  main { flex: 1; padding: 22px 18px; display: flex; flex-direction: column; align-items: center; }
+  #ptt { width: 170px; height: 70px; border: none; border-radius: 14px; background: #1C1C1E; color: #fff;
+         font-size: 17px; font-weight: 700; letter-spacing: .4px; cursor: pointer; touch-action: none;
+         transition: background .08s, transform .06s; }
   #ptt:disabled { opacity: .5; cursor: default; }
-  #ptt.tx { background: #E53935; transform: scale(.99); }
-  #ptt small { display: block; font-size: 13px; font-weight: 400; color: #C9C9CE; margin-top: 8px; }
-  .hint { color: #7A7A80; font-size: 12px; text-align: center; }
-  a { color: #4FC3F7; }
+  #ptt.tx { background: #E53935; transform: scale(.98); }
+  #ptt small { display: block; font-size: 11px; font-weight: 400; color: #C9C9CE; margin-top: 4px; }
+  #pip { margin-top: 12px; background: none; border: 1px solid #2C2C30; color: #4FC3F7; border-radius: 10px;
+         padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  #pip[hidden] { display: none; }
+  .hint { color: #7A7A80; font-size: 12px; text-align: center; margin-top: 18px; }
+  aside { width: 300px; border-left: 1px solid #1C1C1E; display: flex; flex-direction: column; height: calc(100vh - 51px); }
+  .side-head { display: flex; align-items: center; padding: 12px 16px; font-weight: 600; }
+  .side-head span { flex: 1; }
+  #refresh { background: none; border: none; color: #4FC3F7; font-size: 16px; cursor: pointer; }
+  #recs { flex: 1; overflow-y: auto; }
+  .day { color: #7A7A80; font-size: 11px; letter-spacing: .08em; padding: 12px 16px 2px; }
+  .rec { display: flex; align-items: center; gap: 8px; padding: 9px 16px; cursor: pointer; }
+  .rec:hover { background: #151518; }
+  .rec.sel { background: #202027; }
+  .rec .k { font-size: 11px; font-weight: 700; width: 30px; }
+  .rec .t { flex: 1; }
+  .rec .d { color: #A0A0A5; font-size: 13px; }
+  .rec .s { color: #4FC3F7; width: 16px; text-align: right; font-size: 12px; }
+  #empty { color: #7A7A80; font-size: 13px; padding: 16px; }
+  #nowbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid #1C1C1E; }
+  #nowbar[hidden] { display: none; }
+  #np-play { width: 36px; height: 36px; border: none; border-radius: 9px; background: #1C1C1E; color: #fff; font-size: 14px; cursor: pointer; }
+  .np-info { flex: 1; min-width: 0; }
+  #np-title { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #np-dl { color: #4FC3F7; font-size: 20px; text-decoration: none; }
+  @media (max-width: 760px) {
+    #wrap { flex-direction: column; }
+    aside { width: auto; border-left: none; border-top: 1px solid #1C1C1E; height: auto; }
+    #recs { max-height: 50vh; }
+  }
 </style></head>
 <body>
   <header>
     <h1>Radio Relay</h1>
-    <span id="dot"></span><span id="status">connecting…</span>
+    <span id="dot"></span><span id="status">tap to start</span>
   </header>
-  <main>
-    <button id="ptt" disabled>PUSH TO TALK<small>hold the button or the spacebar</small></button>
-    <p class="hint">Listening is automatic. Hold to transmit. Recordings at <a id="rec" href="#">port 5001</a>.<br>
-      Transmit needs a secure page: open this over Tailscale HTTPS, or trust this origin in Chrome.</p>
-  </main>
+  <div id="wrap">
+    <main>
+      <button id="ptt" disabled>PTT<small>hold, or spacebar</small></button>
+      <button id="pip" hidden>Pop out PTT</button>
+      <p class="hint">Listening is automatic. Hold PTT or the spacebar to talk.</p>
+    </main>
+    <aside>
+      <div class="side-head"><span>Recordings</span><button id="refresh" title="Refresh">&#x21bb;</button></div>
+      <div id="recs"><div id="empty">tap to start</div></div>
+      <div id="nowbar" hidden>
+        <button id="np-play">&#x275a;&#x275a;</button>
+        <div class="np-info"><span id="np-title"></span></div>
+        <a id="np-dl" title="Download" download>&#x2913;</a>
+      </div>
+    </aside>
+  </div>
+  <audio id="audio"></audio>
 <script>
-const PCM_RATE = 48000, FRAME = 960;
+const PCM_RATE = 48000, FRAME = 960, BUF = 4096, GAP = 15 * 60;
 const statusEl = document.getElementById('status'), dot = document.getElementById('dot'), btn = document.getElementById('ptt');
-let ctx, ws, keyed = false, ready = false, micOK = false;
-let pcmQ = [], cur = null, pos = 0;              // RX playback queue (Int16 chunks)
-let txAcc = new Int16Array(FRAME), txN = 0;      // TX accumulator -> 960-sample frames
-const BUF = 4096;
+let ctx, ws, keyed = false, ready = false, micOK = false, pipBtn = null;
+let pcmQ = [], cur = null, pos = 0;
+let txAcc = new Int16Array(FRAME), txN = 0;
 
-function setStatus(text, color) { statusEl.textContent = text; dot.style.background = color; }
+function setStatus(t, c) { statusEl.textContent = t; dot.style.background = c; }
 
 function chirp() {
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.frequency.value = 1200; o.connect(g); g.connect(ctx.destination);
-  g.gain.setValueAtTime(0.18, ctx.currentTime);
-  o.start(); o.stop(ctx.currentTime + 0.07);
+  g.gain.setValueAtTime(0.18, ctx.currentTime); o.start(); o.stop(ctx.currentTime + 0.07);
 }
 
 async function start() {
   ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: PCM_RATE });
-
-  // RX playback via ScriptProcessor. Unlike AudioWorklet it needs no secure context, so plain http
-  // over Tailscale can listen. It pulls from pcmQ and outputs silence when there's nothing.
   const play = ctx.createScriptProcessor(BUF, 0, 1);
   play.onaudioprocess = e => {
     const out = e.outputBuffer.getChannelData(0);
@@ -321,7 +395,6 @@ async function start() {
   };
   play.connect(ctx.destination);
 
-  // Transmit needs the mic, which browsers only grant in a secure context (HTTPS or localhost).
   try {
     if (!navigator.mediaDevices) throw new Error('insecure context');
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -336,17 +409,19 @@ async function start() {
         if (txN === FRAME) { ws.send(txAcc.buffer.slice(0)); txN = 0; }
       }
     };
-    const mute = ctx.createGain(); mute.gain.value = 0;   // keep the node running without echoing the mic
+    const mute = ctx.createGain(); mute.gain.value = 0;
     ctx.createMediaStreamSource(stream).connect(cap);
     cap.connect(mute); mute.connect(ctx.destination);
     micOK = true;
+    if (window.documentPictureInPicture) document.getElementById('pip').hidden = false;
   } catch (err) {
     micOK = false;
     btn.firstChild.textContent = 'LISTEN ONLY';
-    btn.querySelector('small').textContent = 'transmit needs HTTPS (see the hint below)';
+    btn.querySelector('small').textContent = 'transmit needs HTTPS';
   }
 
   connect();
+  loadRecs();
   setInterval(() => { if (ws && ws.readyState === 1) ws.send('{"ping":1}'); }, 2000);
 }
 
@@ -363,21 +438,108 @@ function setKeyed(on) {
   if (on === keyed || !ready || !micOK) return;
   keyed = on;
   btn.classList.toggle('tx', on);
-  btn.firstChild.textContent = on ? 'TRANSMITTING' : 'PUSH TO TALK';
+  btn.firstChild.textContent = on ? 'ON AIR' : 'PTT';
+  if (pipBtn) { pipBtn.classList.toggle('tx', on); pipBtn.textContent = on ? 'ON AIR' : 'PTT'; }
   if (on) { ctx.resume(); chirp(); }
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ ptt: on }));
   setStatus(on ? 'transmitting' : 'listening', on ? '#E53935' : '#43A047');
 }
 
 btn.addEventListener('pointerdown', e => { e.preventDefault(); setKeyed(true); });
-window.addEventListener('pointerup', () => setKeyed(false));
+btn.addEventListener('pointerup', () => setKeyed(false));
+btn.addEventListener('pointerleave', () => setKeyed(false));
 window.addEventListener('blur', () => setKeyed(false));
 window.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setKeyed(true); } });
 window.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); setKeyed(false); } });
 
-document.getElementById('rec').href = location.protocol + '//' + location.hostname + ':5001/recordings';
+// ---- Picture-in-Picture pop-out PTT ----
+document.getElementById('pip').addEventListener('click', async () => {
+  if (!window.documentPictureInPicture) return;
+  const w = await documentPictureInPicture.requestWindow({ width: 200, height: 150 });
+  const st = w.document.createElement('style');
+  st.textContent = 'body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;' +
+    'background:#0E0E10;font-family:system-ui}button{width:88%;height:74%;border:none;border-radius:16px;' +
+    'background:#1C1C1E;color:#fff;font-size:24px;font-weight:700;cursor:pointer;touch-action:none}button.tx{background:#E53935}';
+  w.document.head.append(st);
+  const b = w.document.createElement('button');
+  b.textContent = keyed ? 'ON AIR' : 'PTT';
+  b.addEventListener('pointerdown', e => { e.preventDefault(); setKeyed(true); });
+  b.addEventListener('pointerup', () => setKeyed(false));
+  b.addEventListener('pointerleave', () => setKeyed(false));
+  w.document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setKeyed(true); } });
+  w.document.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); setKeyed(false); } });
+  w.document.body.append(b);
+  pipBtn = b;
+  w.addEventListener('pagehide', () => { pipBtn = null; });
+});
 
-// Audio needs a user gesture to start; first tap/click anywhere boots it.
+// ---- Recordings sidebar (fetch, group, autoplay, download) ----
+const audio = document.getElementById('audio');
+const recsEl = document.getElementById('recs'), nowbar = document.getElementById('nowbar');
+const npTitle = document.getElementById('np-title'), npPlay = document.getElementById('np-play'), npDl = document.getElementById('np-dl');
+let recs = [], playingIdx = -1;
+
+function fmtTime(ts) { return new Date(ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function dayOf(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (same(d, now)) return 'Today';
+  if (same(d, yest)) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+async function loadRecs() {
+  try {
+    const r = await fetch('/recordings', { cache: 'no-store' });
+    recs = await r.json();
+  } catch (e) { recsEl.innerHTML = '<div id="empty">can\'t reach recordings</div>'; return; }
+  render();
+}
+
+function render() {
+  if (!recs.length) { recsEl.innerHTML = '<div id="empty">No recordings yet</div>'; return; }
+  let html = '', lastDay = null;
+  for (let i = 0; i < recs.length; i++) {
+    const r = recs[i];
+    // conversation header: first (newest) row of each group separated by a > GAP gap
+    const isHead = i === 0 || (recs[i - 1].start - r.start) > GAP;
+    if (isHead) {
+      let j = i; while (j + 1 < recs.length && recs[j].start - recs[j + 1].start <= GAP) j++;
+      const from = fmtTime(recs[j].start), to = fmtTime(r.start);
+      html += '<div class="day">' + dayOf(r.start) + ' &middot; ' + (i === j ? to : from + ' – ' + to) + '</div>';
+    }
+    const tx = r.kind === 'tx';
+    html += '<div class="rec' + (i === playingIdx ? ' sel' : '') + '" data-i="' + i + '">' +
+      '<span class="k" style="color:' + (tx ? '#E53935' : '#43A047') + '">' + (tx ? 'YOU' : 'RX') + '</span>' +
+      '<span class="t">' + fmtTime(r.start) + '</span>' +
+      '<span class="d">' + Math.round(r.dur) + 's</span>' +
+      '<span class="s">' + (i === playingIdx && !audio.paused ? '❚❚' : (i === playingIdx ? '▶' : '')) + '</span></div>';
+  }
+  recsEl.innerHTML = html;
+  recsEl.querySelectorAll('.rec').forEach(el =>
+    el.addEventListener('click', () => { const i = +el.dataset.i; i === playingIdx ? togglePause() : playRec(i); }));
+}
+
+function playRec(i) {
+  playingIdx = i;
+  const r = recs[i];
+  audio.src = '/recordings/' + r.name;
+  audio.play().catch(() => {});
+  npTitle.textContent = (r.kind === 'tx' ? 'You' : 'Radio') + ' · ' + dayOf(r.start) + ' ' + fmtTime(r.start);
+  npDl.href = '/recordings/' + r.name; npDl.setAttribute('download', r.name);
+  nowbar.hidden = false;
+  render();
+}
+function togglePause() { if (audio.paused) audio.play(); else audio.pause(); render(); }
+npPlay.addEventListener('click', togglePause);
+audio.addEventListener('play', () => { npPlay.innerHTML = '&#x275a;&#x275a;'; render(); });
+audio.addEventListener('pause', () => { npPlay.innerHTML = '&#x25b6;'; render(); });
+audio.addEventListener('ended', () => { if (playingIdx > 0) playRec(playingIdx - 1); else { nowbar.hidden = true; playingIdx = -1; render(); } });
+document.getElementById('refresh').addEventListener('click', loadRecs);
+setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0) loadRecs(); }, 15000);
+
+// Audio needs a user gesture; first interaction boots everything.
 function boot() { if (ctx) return; start().catch(err => setStatus('audio error: ' + err.message, '#E53935')); }
 window.addEventListener('pointerdown', boot, { once: true });
 window.addEventListener('keydown', boot, { once: true });

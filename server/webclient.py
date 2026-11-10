@@ -472,10 +472,13 @@ async function startOverlay() {
     await pv.requestPictureInPicture();
     if (!overlayTimer) overlayTimer = setInterval(drawOverlay, 250);   // keep the stream alive
     navigator.mediaSession.metadata = new MediaMetadata({ title: 'Radio PTT' });
-    navigator.mediaSession.setActionHandler('play', () => { if (ctx) ctx.resume().catch(() => {}); setKeyed(true); });
-    navigator.mediaSession.setActionHandler('pause', () => setKeyed(false));
+    // Either button just toggles transmit, so the play/pause icon can't mislead; the red "ON AIR"
+    // text on the window is the real state. Opens idle (not transmitting).
+    const toggle = () => { if (ctx) ctx.resume().catch(() => {}); setKeyed(!keyed); };
+    navigator.mediaSession.setActionHandler('play', toggle);
+    navigator.mediaSession.setActionHandler('pause', toggle);
     navigator.mediaSession.playbackState = keyed ? 'playing' : 'paused';
-    setStatus('PTT overlay opened', '#43A047');
+    setStatus('PTT overlay opened — tap it to talk', '#43A047');
     return true;
   } catch (e) { setStatus('overlay failed: ' + e.message, '#E53935'); return false; }
 }
@@ -646,7 +649,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0
 // Start listening automatically on load. The AudioContext may begin suspended under the browser's
 // autoplay policy; we resume it opportunistically here and on the first interaction, so there's no
 // explicit "tap to start".
-const BUILD = 'b11';
+const BUILD = 'b12';
 document.getElementById('build').textContent = BUILD;
 setStatus('connecting…', '#FFB300');
 start().catch(err => setStatus('audio error: ' + err.message, '#E53935'));

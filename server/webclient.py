@@ -480,7 +480,8 @@ async function floatOverApps() {
     const w = await documentPictureInPicture.requestWindow({ width: 240, height: 180 });
     if (pttPanel) { pttPanel.remove(); pttPanel = null; }
     buildPttWindow(w);
-    setStatus('floating PTT window opened', '#43A047');
+    try { w.focus(); } catch (e) {}
+    setStatus('floating PTT opened — look for a small window', '#43A047');
   } catch (e) { setStatus('float failed: ' + e.message, '#E53935'); }
 }
 
@@ -600,7 +601,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0
 // Start listening automatically on load. The AudioContext may begin suspended under the browser's
 // autoplay policy; we resume it opportunistically here and on the first interaction, so there's no
 // explicit "tap to start".
-const BUILD = 'b8';
+const BUILD = 'b9';
 document.getElementById('build').textContent = BUILD;
 setStatus('connecting…', '#FFB300');
 start().catch(err => setStatus('audio error: ' + err.message, '#E53935'));

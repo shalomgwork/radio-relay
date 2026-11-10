@@ -508,16 +508,13 @@ function showPttPanel() {
   bar.addEventListener('pointerup', () => { drag = false; });
 }
 
-document.getElementById('pip').addEventListener('click', async () => {
-  if (window.documentPictureInPicture) {   // float over other apps where supported
-    try {
-      const w = await documentPictureInPicture.requestWindow({ width: 200, height: 150 });
-      buildPttWindow(w);
-      return;
-    } catch (e) { /* fall through to the in-page panel */ }
-  }
-  showPttPanel();
-});
+(function () {
+  const pb = document.getElementById('pip');
+  pb.addEventListener('click', () => {
+    showPttPanel();
+    pb.textContent = pttPanel ? 'Close PTT panel' : 'Pop out PTT';
+  });
+})();
 
 // ---- Recordings sidebar (fetch, group, autoplay, download) ----
 const audio = document.getElementById('audio');
@@ -588,7 +585,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0
 // Start listening automatically on load. The AudioContext may begin suspended under the browser's
 // autoplay policy; we resume it opportunistically here and on the first interaction, so there's no
 // explicit "tap to start".
-const BUILD = 'b6';
+const BUILD = 'b7';
 document.getElementById('build').textContent = BUILD;
 setStatus('connecting…', '#FFB300');
 start().catch(err => setStatus('audio error: ' + err.message, '#E53935'));

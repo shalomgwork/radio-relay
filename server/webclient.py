@@ -349,7 +349,7 @@ PAGE = r"""<!DOCTYPE html>
 <body>
   <header>
     <h1>Radio Relay</h1>
-    <span id="dot"></span><span id="status">connecting…</span>
+    <span id="dot"></span><span id="status">connecting…</span><span id="build" style="color:#55555A;font-size:11px;margin-left:8px"></span>
   </header>
   <div id="wrap">
     <main>
@@ -440,7 +440,7 @@ function setKeyed(on) {
   keyed = on;
   btn.classList.toggle('tx', on);
   btn.firstChild.textContent = on ? 'ON AIR' : 'PTT';
-  if (pipBtn) { pipBtn.classList.toggle('tx', on); pipBtn.textContent = on ? 'ON AIR' : 'PTT'; }
+  if (pipBtn) { pipBtn.classList.toggle('tx', on); pipBtn.textContent = on ? 'ON AIR' : 'PTT'; pipBtn.style.background = on ? '#E53935' : '#1C1C1E'; }
   if (on) { ctx.resume(); chirp(); }
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ ptt: on }));
   setStatus(on ? 'transmitting' : 'listening', on ? '#E53935' : '#43A047');
@@ -472,18 +472,51 @@ function buildPttWindow(w) {
   w.addEventListener('pagehide', () => { pipBtn = null; });
 }
 
+// Guaranteed fallback: a draggable PTT panel inside the page. Always appears (no popup blocker,
+// no API needed). It floats within the browser window rather than over other apps.
+let pttPanel = null;
+function showPttPanel() {
+  if (pttPanel) { pttPanel.remove(); pttPanel = null; pipBtn = null; return; }   // toggle off
+  const p = document.createElement('div');
+  p.style.cssText = 'position:fixed;right:20px;bottom:20px;width:150px;background:#16161A;border:1px solid #2C2C30;' +
+    'border-radius:14px;box-shadow:0 10px 34px rgba(0,0,0,.55);z-index:9999;overflow:hidden';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;align-items:center;cursor:move;padding:6px 10px;background:#1C1C1E;font-size:11px;color:#8A8A90';
+  const label = document.createElement('span'); label.textContent = 'PTT'; label.style.flex = '1';
+  const x = document.createElement('span'); x.textContent = '✕';
+  x.style.cssText = 'cursor:pointer;padding:0 2px;color:#9A9AA0';
+  x.onclick = () => { p.remove(); pttPanel = null; pipBtn = null; };
+  bar.append(label, x);
+  const b = document.createElement('button');
+  b.textContent = keyed ? 'ON AIR' : 'PTT';
+  b.style.cssText = 'width:100%;height:92px;border:none;background:' + (keyed ? '#E53935' : '#1C1C1E') +
+    ';color:#fff;font-size:22px;font-weight:700;cursor:pointer;touch-action:none';
+  b.addEventListener('pointerdown', e => { e.preventDefault(); if (ctx) ctx.resume().catch(() => {}); setKeyed(true); });
+  b.addEventListener('pointerup', () => setKeyed(false));
+  b.addEventListener('pointerleave', () => setKeyed(false));
+  p.append(bar, b); document.body.appendChild(p);
+  pttPanel = p; pipBtn = b;
+  let dx = 0, dy = 0, drag = false;
+  bar.addEventListener('pointerdown', e => {
+    if (e.target === x) return;
+    drag = true; dx = e.clientX - p.offsetLeft; dy = e.clientY - p.offsetTop; bar.setPointerCapture(e.pointerId);
+  });
+  bar.addEventListener('pointermove', e => {
+    if (!drag) return;
+    p.style.left = (e.clientX - dx) + 'px'; p.style.top = (e.clientY - dy) + 'px'; p.style.right = 'auto'; p.style.bottom = 'auto';
+  });
+  bar.addEventListener('pointerup', () => { drag = false; });
+}
+
 document.getElementById('pip').addEventListener('click', async () => {
-  if (window.documentPictureInPicture) {
+  if (window.documentPictureInPicture) {   // float over other apps where supported
     try {
       const w = await documentPictureInPicture.requestWindow({ width: 200, height: 150 });
       buildPttWindow(w);
       return;
-    } catch (e) { /* fall through to a normal popup window */ }
+    } catch (e) { /* fall through to the in-page panel */ }
   }
-  const w = window.open('', 'ptt', 'width=220,height=170,menubar=no,toolbar=no,location=no,status=no');
-  if (!w) { setStatus('allow popups to pop out PTT', '#FFB300'); return; }
-  try { w.document.title = 'PTT'; buildPttWindow(w); }
-  catch (e) { setStatus('pop-out failed: ' + e.message, '#E53935'); }
+  showPttPanel();
 });
 
 // ---- Recordings sidebar (fetch, group, autoplay, download) ----
@@ -555,6 +588,8 @@ setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0
 // Start listening automatically on load. The AudioContext may begin suspended under the browser's
 // autoplay policy; we resume it opportunistically here and on the first interaction, so there's no
 // explicit "tap to start".
+const BUILD = 'b6';
+document.getElementById('build').textContent = BUILD;
 setStatus('connecting…', '#FFB300');
 start().catch(err => setStatus('audio error: ' + err.message, '#E53935'));
 function resumeAudio() { if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {}); }

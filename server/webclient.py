@@ -474,15 +474,24 @@ function buildPttWindow(w) {
   w.addEventListener('pagehide', () => { pipBtn = null; document.getElementById('pip').textContent = 'Pop out PTT'; });
 }
 
-async function floatOverApps() {
-  if (!window.documentPictureInPicture) { setStatus('float-over-apps needs Chrome 116+', '#FFB300'); return; }
+// Pop the PTT into a real separate browser window. Document Picture-in-Picture reports success but
+// never shows a window on some Chrome/macOS builds, so we use a plain popup window instead — the OS
+// actually displays it. It's a normal small window (resizable, draggable), not pinned over other apps.
+let pttWin = null;
+function floatOverApps() {
+  if (pttWin && !pttWin.closed) { pttWin.focus(); return true; }
+  const w = window.open('', 'radioptt', 'popup=yes,width=240,height=210');
+  if (!w) { setStatus('allow popups to pop out a window', '#FFB300'); return false; }
+  if (pttPanel) { pttPanel.remove(); pttPanel = null; }
   try {
-    const w = await documentPictureInPicture.requestWindow({ width: 240, height: 180 });
-    if (pttPanel) { pttPanel.remove(); pttPanel = null; }
+    w.document.title = 'Radio PTT';
     buildPttWindow(w);
-    try { w.focus(); } catch (e) {}
-    setStatus('floating PTT opened — look for a small window', '#43A047');
-  } catch (e) { setStatus('float failed: ' + e.message, '#E53935'); }
+    w.focus();
+    pttWin = w;
+    w.addEventListener('pagehide', () => { pttWin = null; });
+    setStatus('PTT window opened', '#43A047');
+    return true;
+  } catch (e) { setStatus('pop-out failed: ' + e.message, '#E53935'); return false; }
 }
 
 // Guaranteed fallback: a draggable PTT panel inside the page. Always appears (no popup blocker,
@@ -527,7 +536,8 @@ function showPttPanel() {
 (function () {
   const pb = document.getElementById('pip');
   pb.addEventListener('click', () => {
-    showPttPanel();
+    if (floatOverApps()) return;           // open a real separate window
+    showPttPanel();                        // popups blocked: use the in-page panel
     pb.textContent = pttPanel ? 'Close PTT panel' : 'Pop out PTT';
   });
 })();
@@ -601,7 +611,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0
 // Start listening automatically on load. The AudioContext may begin suspended under the browser's
 // autoplay policy; we resume it opportunistically here and on the first interaction, so there's no
 // explicit "tap to start".
-const BUILD = 'b9';
+const BUILD = 'b10';
 document.getElementById('build').textContent = BUILD;
 setStatus('connecting…', '#FFB300');
 start().catch(err => setStatus('audio error: ' + err.message, '#E53935'));

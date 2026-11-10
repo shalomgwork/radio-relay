@@ -349,7 +349,7 @@ PAGE = r"""<!DOCTYPE html>
 <body>
   <header>
     <h1>Radio Relay</h1>
-    <span id="dot"></span><span id="status">tap to start</span>
+    <span id="dot"></span><span id="status">connecting…</span>
   </header>
   <div id="wrap">
     <main>
@@ -359,7 +359,7 @@ PAGE = r"""<!DOCTYPE html>
     </main>
     <aside>
       <div class="side-head"><span>Recordings</span><button id="refresh" title="Refresh">&#x21bb;</button></div>
-      <div id="recs"><div id="empty">tap to start</div></div>
+      <div id="recs"><div id="empty">Loading…</div></div>
       <div id="nowbar" hidden>
         <button id="np-play">&#x275a;&#x275a;</button>
         <div class="np-info"><span id="np-title"></span></div>
@@ -422,6 +422,7 @@ async function start() {
 
   connect();
   loadRecs();
+  ctx.resume().catch(() => {});
   setInterval(() => { if (ws && ws.readyState === 1) ws.send('{"ping":1}'); }, 2000);
 }
 
@@ -454,23 +455,25 @@ window.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefau
 
 // ---- Picture-in-Picture pop-out PTT ----
 document.getElementById('pip').addEventListener('click', async () => {
-  if (!window.documentPictureInPicture) return;
-  const w = await documentPictureInPicture.requestWindow({ width: 200, height: 150 });
-  const st = w.document.createElement('style');
-  st.textContent = 'body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;' +
-    'background:#0E0E10;font-family:system-ui}button{width:88%;height:74%;border:none;border-radius:16px;' +
-    'background:#1C1C1E;color:#fff;font-size:24px;font-weight:700;cursor:pointer;touch-action:none}button.tx{background:#E53935}';
-  w.document.head.append(st);
-  const b = w.document.createElement('button');
-  b.textContent = keyed ? 'ON AIR' : 'PTT';
-  b.addEventListener('pointerdown', e => { e.preventDefault(); setKeyed(true); });
-  b.addEventListener('pointerup', () => setKeyed(false));
-  b.addEventListener('pointerleave', () => setKeyed(false));
-  w.document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setKeyed(true); } });
-  w.document.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); setKeyed(false); } });
-  w.document.body.append(b);
-  pipBtn = b;
-  w.addEventListener('pagehide', () => { pipBtn = null; });
+  if (!window.documentPictureInPicture) { setStatus('pop-out needs Chrome 116+', '#FFB300'); return; }
+  try {
+    const w = await documentPictureInPicture.requestWindow({ width: 200, height: 150 });
+    const st = w.document.createElement('style');
+    st.textContent = 'body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;' +
+      'background:#0E0E10;font-family:system-ui}button{width:88%;height:74%;border:none;border-radius:16px;' +
+      'background:#1C1C1E;color:#fff;font-size:24px;font-weight:700;cursor:pointer;touch-action:none}button.tx{background:#E53935}';
+    w.document.head.append(st);
+    const b = w.document.createElement('button');
+    b.textContent = keyed ? 'ON AIR' : 'PTT';
+    b.addEventListener('pointerdown', e => { e.preventDefault(); if (ctx) ctx.resume().catch(() => {}); setKeyed(true); });
+    b.addEventListener('pointerup', () => setKeyed(false));
+    b.addEventListener('pointerleave', () => setKeyed(false));
+    w.document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setKeyed(true); } });
+    w.document.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); setKeyed(false); } });
+    w.document.body.append(b);
+    pipBtn = b;
+    w.addEventListener('pagehide', () => { pipBtn = null; });
+  } catch (e) { setStatus('pop-out failed: ' + e.message, '#E53935'); }
 });
 
 // ---- Recordings sidebar (fetch, group, autoplay, download) ----
@@ -539,11 +542,15 @@ audio.addEventListener('ended', () => { if (playingIdx > 0) playRec(playingIdx -
 document.getElementById('refresh').addEventListener('click', loadRecs);
 setInterval(() => { if (document.visibilityState === 'visible' && playingIdx < 0) loadRecs(); }, 15000);
 
-// Audio needs a user gesture; first interaction boots everything.
-function boot() { if (ctx) return; start().catch(err => setStatus('audio error: ' + err.message, '#E53935')); }
-window.addEventListener('pointerdown', boot, { once: true });
-window.addEventListener('keydown', boot, { once: true });
-setStatus('tap anywhere to start', '#FFB300');
+// Start listening automatically on load. The AudioContext may begin suspended under the browser's
+// autoplay policy; we resume it opportunistically here and on the first interaction, so there's no
+// explicit "tap to start".
+setStatus('connecting…', '#FFB300');
+start().catch(err => setStatus('audio error: ' + err.message, '#E53935'));
+function resumeAudio() { if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {}); }
+window.addEventListener('pointerdown', resumeAudio);
+window.addEventListener('keydown', resumeAudio);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resumeAudio(); });
 </script>
 </body></html>
 """
